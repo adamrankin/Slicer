@@ -1,4 +1,3 @@
-
 if(Slicer_USE_CTKAPPLAUNCHER)
 
   set(proj CTKAPPLAUNCHER)
@@ -22,6 +21,7 @@ if(Slicer_USE_CTKAPPLAUNCHER)
   endif()
 
   if(NOT DEFINED CTKAppLauncher_DIR)
+    set(_base_url https://github.com/commontk/AppLauncher/releases/download/v)
 
     SlicerMacroGetOperatingSystemArchitectureBitness(VAR_PREFIX CTKAPPLAUNCHER)
     set(launcher_version "0.1.27")
@@ -30,7 +30,12 @@ if(Slicer_USE_CTKAPPLAUNCHER)
       set(CTKAPPLAUNCHER_ARCHITECTURE "i386")
       set(md5 "3f05dcc605ac2144edc69b28c27bb8d1")
     elseif("${CTKAPPLAUNCHER_OS}" STREQUAL "linux")
-      set(md5 "a9a8aab9c0e91cdd0b5265eb799daf74")
+      if("${CMAKE_HOST_SYSTEM_PROCESSOR}" STREQUAL "aarch64")
+        set(_base_url https://github.com/Slicer/AppLauncher/releases/download/v)
+        set(md5 "54afe832001fb0c0146c089eeccd2d8f")
+      else()
+        set(md5 "a9a8aab9c0e91cdd0b5265eb799daf74")
+      endif()
     elseif("${CTKAPPLAUNCHER_OS}" STREQUAL "macosx")
       set(md5 "a9de73a1609c988167884efa23819287")
     endif()
@@ -39,7 +44,7 @@ if(Slicer_USE_CTKAPPLAUNCHER)
 
     ExternalProject_Add(${proj}
       ${${proj}_EP_ARGS}
-      URL https://github.com/commontk/AppLauncher/releases/download/v${launcher_version}/CTKAppLauncher-${launcher_version}-${CTKAPPLAUNCHER_OS}-${CTKAPPLAUNCHER_ARCHITECTURE}.tar.gz
+      URL ${_base_url}${launcher_version}/CTKAppLauncher-${launcher_version}-${CTKAPPLAUNCHER_OS}-${CMAKE_HOST_SYSTEM_PROCESSOR}.tar.gz
       URL_MD5 ${md5}
       DOWNLOAD_DIR ${CMAKE_BINARY_DIR}
       SOURCE_DIR ${EP_BINARY_DIR}

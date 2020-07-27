@@ -212,6 +212,14 @@ option(Slicer_USE_VTK_DEBUG_LEAKS "Enable VTKs Debug Leaks functionality in both
 set(VTK_DEBUG_LEAKS ${Slicer_USE_VTK_DEBUG_LEAKS})
 mark_as_superbuild(VTK_DEBUG_LEAKS:BOOL)
 
+option(Slicer_USE_OpenGLES "Build Slicer with OpenGL ES backend." OFF)
+mark_as_superbuild(Slicer_USE_OpenGLES:BOOL)
+
+if(Slicer_USE_OpenGLES)
+  option(Slicer_USE_OpenGLES_EGL "Use EGL with OpenGL ES backend." OFF)
+  mark_as_superbuild(Slicer_USE_OpenGLES_EGL:BOOL)
+endif()
+
 option(Slicer_BUILD_DICOM_SUPPORT "Build Slicer with DICOM support" ON)
 mark_as_superbuild(Slicer_BUILD_DICOM_SUPPORT)
 
