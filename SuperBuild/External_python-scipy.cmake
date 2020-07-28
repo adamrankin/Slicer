@@ -35,7 +35,8 @@ if(NOT Slicer_USE_SYSTEM_${proj})
   # - scipy-1.5.2-cp36-cp36m-manylinux1_x86_64.whl
   scipy==1.5.2 --hash=sha256:8e28e74b97fc8d6aa0454989db3b5d36fc27e69cef39a7ee5eaf8174ca1123cb \
               --hash=sha256:cca9fce15109a36a0a9f9cfc64f870f1c140cb235ddf27fe0328e6afb44dfed0 \
-              --hash=sha256:07e52b316b40a4f001667d1ad4eb5f2318738de34597bd91537851365b6c61f1
+              --hash=sha256:07e52b316b40a4f001667d1ad4eb5f2318738de34597bd91537851365b6c61f1 \
+              --hash=sha256:066c513d90eb3fd7567a9e150828d39111ebd88d3e924cdfc9f8ce19ab6f90c9
   ]===])
 
   ExternalProject_Add(${proj}
