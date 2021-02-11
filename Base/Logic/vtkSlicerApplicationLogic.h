@@ -192,7 +192,7 @@ class VTK_SLICER_BASE_LOGIC_EXPORT vtkSlicerApplicationLogic
   void SetTracingOff () { this->Tracing = 0; }
 
   /// Return True if \a filePath is a descendant of \a applicationHomeDir.
-  /// \note On MacOSX extensions are installed in the "<Slicer_EXTENSIONS_DIRBASENAME>-<slicerRevision>"
+  /// \note On macOS extensions are installed in the "<Slicer_EXTENSIONS_DIRBASENAME>-<slicerRevision>"
   /// folder being a sub directory of the application dir, an extra test is performed to make sure the
   /// tested filePath doesn't belong to that "<Slicer_EXTENSIONS_DIRBASENAME>-<slicerRevision>" folder.
   /// If this is the case, False will be returned.
@@ -221,6 +221,10 @@ class VTK_SLICER_BASE_LOGIC_EXPORT vtkSlicerApplicationLogic
   /// Values are allowed to be modified.
   vtkPersonInformation* GetUserInformation();
 
+  /// Callback function to request invoking a modified event on the main thread.
+  /// This function may be called from any thread.
+  static void RequestModifiedCallback(vtkObject* caller, unsigned long eid, void* clientData, void* callData);
+
 protected:
 
   vtkSlicerApplicationLogic();
@@ -244,6 +248,12 @@ protected:
   /// which can force a render.
   void ProcessReadSceneData( ReadDataRequest &req );
   void ProcessWriteSceneData( WriteDataRequest &req );
+
+  /// Set background thread (background processing, networking) priority, which
+  /// can be set via an environment variable SLICER_BACKGROUND_THREAD_PRIORITY.
+  /// Value of the variable must be an integer
+  /// specifying background threads priority (default: 20).
+  virtual void SetCurrentThreadPriorityToBackground();
 
 private:
   vtkSlicerApplicationLogic(const vtkSlicerApplicationLogic&);

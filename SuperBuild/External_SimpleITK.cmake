@@ -20,9 +20,80 @@ if(NOT Slicer_USE_SYSTEM_${proj})
 
   include(ExternalProjectForNonCMakeProject)
 
+  set(EP_SOURCE_DIR ${CMAKE_BINARY_DIR}/${proj})
+  set(EP_BINARY_DIR ${CMAKE_BINARY_DIR}/${proj}-build)
+  set(EP_INSTALL_DIR ${CMAKE_BINARY_DIR}/${proj}-install)
+
+  # Variables used to update PATH, LD_LIBRARY_PATH or DYLD_LIBRARY_PATH in env. script below
+  if(WIN32)
+    set(_varname "PATH")
+    set(_path_sep ";")
+  elseif(UNIX)
+    set(_path_sep ":")
+    if(APPLE)
+      set(_varname "DYLD_LIBRARY_PATH")
+    else()
+      set(_varname "LD_LIBRARY_PATH")
+    endif()
+  endif()
+
+  # Used below to both set the env. script and the launcher settings
+  set(_lib_subdir lib)
+  if(WIN32)
+    set(_lib_subdir bin)
+  endif()
+
+  set(_paths)
+
+  if(CMAKE_CONFIGURATION_TYPES)
+    foreach(config ${CMAKE_CONFIGURATION_TYPES})
+      list(APPEND _paths
+        # ITK
+        ${ITK_DIR}/${_lib_subdir}/${config}
+        )
+    endforeach()
+  else()
+    list(APPEND _paths
+      # ITK
+      ${ITK_DIR}/${_lib_subdir}
+      )
+  endif()
+
+  if(Slicer_USE_SimpleITK_SHARED)
+    if(CMAKE_CONFIGURATION_TYPES)
+      foreach(config ${CMAKE_CONFIGURATION_TYPES})
+        list(APPEND _paths
+          # SimpleITK
+          ${EP_BINARY_DIR}/SimpleITK-build/${_lib_subdir}/${config}
+          # DCMTK
+          ${DCMTK_DIR}/${_lib_subdir}/${config}
+          )
+      endforeach()
+    else()
+      list(APPEND _paths
+        # SimpleITK
+        ${EP_BINARY_DIR}/SimpleITK-build/${_lib_subdir}
+        # DCMTK
+        ${DCMTK_DIR}/${_lib_subdir}
+        )
+    endif()
+
+    # TBB
+    if(Slicer_USE_TBB)
+      list(APPEND _paths ${TBB_BIN_DIR})
+    endif()
+  endif()
+
+  list(JOIN _paths "${_path_sep}" _paths)
+
   # environment
   set(_env_script ${CMAKE_BINARY_DIR}/${proj}_Env.cmake)
   ExternalProject_Write_SetPythonSetupEnv_Commands(${_env_script})
+  file(APPEND ${_env_script}
+"#------------------------------------------------------------------------------
+# Added by '${CMAKE_CURRENT_LIST_FILE}'
+set(ENV{${_varname}} \"${_paths}${_path_sep}\$ENV{${_varname}}\")
+")
 
   set(EXTERNAL_PROJECT_OPTIONAL_CMAKE_CACHE_ARGS)
 
@@ -39,26 +110,21 @@ if(NOT Slicer_USE_SYSTEM_${proj})
   set(_install_script ${CMAKE_BINARY_DIR}/${proj}_install_step.cmake)
   file(WRITE ${_install_script}
 "include(\"${_env_script}\")
-set(${proj}_WORKING_DIR \"${CMAKE_BINARY_DIR}/${proj}-build/SimpleITK-build/Wrapping/Python\")
-ExternalProject_Execute(${proj} \"install\" \"${PYTHON_EXECUTABLE}\" Packaging/setup.py install)
+set(${proj}_WORKING_DIR \"${EP_BINARY_DIR}/SimpleITK-build/Wrapping/Python\")
+ExternalProject_Execute(${proj} \"install\" \"${PYTHON_EXECUTABLE}\" setup.py install)
 ")
 
   ExternalProject_SetIfNotDefined(
     Slicer_${proj}_GIT_REPOSITORY
-    "${EP_GIT_PROTOCOL}://github.com/Slicer/SimpleITK.git"
+    "${EP_GIT_PROTOCOL}://github.com/SimpleITK/SimpleITK.git"
     QUIET
     )
 
   ExternalProject_SetIfNotDefined(
     Slicer_${proj}_GIT_TAG
-    "7ce1f1867eaa419d0ef0f9aeb074363e85b633c4"  # slicer-v2.0rc1-2020-03-09-7ce1f1867
+    "v2.0.1"
     QUIET
     )
-
-  set(EP_SOURCE_DIR ${CMAKE_BINARY_DIR}/${proj})
-  set(EP_BINARY_DIR ${CMAKE_BINARY_DIR}/${proj}-build)
-  set(EP_INSTALL_DIR ${CMAKE_BINARY_DIR}/${proj}-install)
-
 
   # A separate project is used to download, so that the SuperBuild
   # subdirectory can be use for SimpleITK's SuperBuild to build
@@ -120,12 +186,7 @@ ExternalProject_Execute(${proj} \"install\" \"${PYTHON_EXECUTABLE}\" Packaging/s
     #
     DEPENDS SimpleITK-download ${${proj}_DEPENDENCIES}
     )
-  set(SimpleITK_DIR ${CMAKE_BINARY_DIR}/SimpleITK-build/SimpleITK-build)
-
-  set(_lib_subdir lib)
-  if(WIN32)
-    set(_lib_subdir bin)
-  endif()
+  set(SimpleITK_DIR ${EP_BINARY_DIR}/SimpleITK-build)
 
   #-----------------------------------------------------------------------------
   # Launcher setting specific to build tree

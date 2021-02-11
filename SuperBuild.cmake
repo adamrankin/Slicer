@@ -202,10 +202,16 @@ endmacro()
 
 Slicer_Remote_Add(vtkAddon
   GIT_REPOSITORY "${EP_GIT_PROTOCOL}://github.com/Slicer/vtkAddon"
-  GIT_TAG ab95838b7714a8e2fc8724a36197093393562e51
+  GIT_TAG 4a5061920f6f72a2ddff6932176f7de2661b5f76
   OPTION_NAME Slicer_BUILD_vtkAddon
   )
 list_conditional_append(Slicer_BUILD_vtkAddon Slicer_REMOTE_DEPENDENCIES vtkAddon)
+
+set(vtkAddon_CMAKE_DIR ${vtkAddon_SOURCE_DIR}/CMake)
+mark_as_superbuild(vtkAddon_CMAKE_DIR:PATH)
+
+set(vtkAddon_LAUNCH_COMMAND ${Slicer_LAUNCH_COMMAND})
+mark_as_superbuild(vtkAddon_LAUNCH_COMMAND:STRING)
 
 set(vtkAddon_USE_UTF8 ON)
 mark_as_superbuild(vtkAddon_USE_UTF8:BOOL)
@@ -234,7 +240,7 @@ mark_as_advanced(Slicer_BUILD_MULTIVOLUME_SUPPORT)
 
 Slicer_Remote_Add(MultiVolumeExplorer
   GIT_REPOSITORY ${EP_GIT_PROTOCOL}://github.com/fedorov/MultiVolumeExplorer.git
-  GIT_TAG b907c39b876a1d5f9eac1359ce6c829c13c53c93
+  GIT_TAG 8be7d7aa3bfb6878a30420ef68c23a9577cc7b1f
   OPTION_NAME Slicer_BUILD_MultiVolumeExplorer
   OPTION_DEPENDS "Slicer_BUILD_QTLOADABLEMODULES;Slicer_BUILD_MULTIVOLUME_SUPPORT;Slicer_USE_PYTHONQT"
   LABELS REMOTE_MODULE
@@ -243,7 +249,7 @@ list_conditional_append(Slicer_BUILD_MultiVolumeExplorer Slicer_REMOTE_DEPENDENC
 
 Slicer_Remote_Add(MultiVolumeImporter
   GIT_REPOSITORY ${EP_GIT_PROTOCOL}://github.com/fedorov/MultiVolumeImporter.git
-  GIT_TAG 8cd1631ff496fef930ec2bb4f4e0a640d2ae37ea
+  GIT_TAG b701ca17079dd855f9efc4002f7f734cf5fce5d8
   OPTION_NAME Slicer_BUILD_MultiVolumeImporter
   OPTION_DEPENDS "Slicer_BUILD_QTLOADABLEMODULES;Slicer_BUILD_MULTIVOLUME_SUPPORT;Slicer_USE_PYTHONQT"
   LABELS REMOTE_MODULE
@@ -333,18 +339,16 @@ list_conditional_append(Slicer_BUILD_DataStore Slicer_REMOTE_DEPENDENCIES DataSt
 
 Slicer_Remote_Add(CompareVolumes
   GIT_REPOSITORY "${EP_GIT_PROTOCOL}://github.com/pieper/CompareVolumes"
-  GIT_TAG 34f1b3da761f25227d6785b13b5700b8d446992d
+  GIT_TAG 3b74d1fca03ced93f77f21d8873df43e1bfc2bf1
   OPTION_NAME Slicer_BUILD_CompareVolumes
   OPTION_DEPENDS "Slicer_USE_PYTHONQT"
   LABELS REMOTE_MODULE
   )
 list_conditional_append(Slicer_BUILD_CompareVolumes Slicer_REMOTE_DEPENDENCIES CompareVolumes)
 
-# Disable this module until it can be ported to the new markups code
-# Tracked at https://github.com/pieper/LandmarkRegistration/issues/29
 Slicer_Remote_Add(LandmarkRegistration
   GIT_REPOSITORY "${EP_GIT_PROTOCOL}://github.com/pieper/LandmarkRegistration"
-  GIT_TAG c1385ba2cd5069a018cd97c19085788006276918
+  GIT_TAG 7cad2c1796c267899fc3bde02e299c608726a52a
   OPTION_NAME Slicer_BUILD_LandmarkRegistration
   OPTION_DEPENDS "Slicer_BUILD_CompareVolumes;Slicer_USE_PYTHONQT"
   LABELS REMOTE_MODULE
@@ -353,7 +357,7 @@ list_conditional_append(Slicer_BUILD_LandmarkRegistration Slicer_REMOTE_DEPENDEN
 
 Slicer_Remote_Add(SurfaceToolbox
   GIT_REPOSITORY "${EP_GIT_PROTOCOL}://github.com/Slicer/SlicerSurfaceToolbox"
-  GIT_TAG ff51ea00ae4e7413a2aa7974246a7106afdc3609
+  GIT_TAG 1d89caa797126a73a6d4fd1910247f670ddcbdc7
   OPTION_NAME Slicer_BUILD_SurfaceToolbox
   OPTION_DEPENDS "Slicer_USE_PYTHONQT"
   LABELS REMOTE_MODULE

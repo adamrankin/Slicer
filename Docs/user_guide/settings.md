@@ -1,12 +1,10 @@
 # Application settings
 
-## Overview
+## Editing application settings
 
-The application settings dialog allows users to customize application behavior. 
+The application settings dialog allows users to customize application behavior.
 
 After starting Slicer, it can be accessed clicking in menu: `Edit` / `Application Settings`.
-
-## Panels
 
 ### General
 
@@ -36,9 +34,9 @@ Directory where modules can store their temporary outputs if needed.
 
 #### Additional module paths
 
-List of directories scanned at startup to load additional modules. Any CLI, Loadable or scripted modules located in these paths will be loaded. Extensions are listed in the list, to remove an extension, use the [Extension Manager](extension_manager) instead.
+List of directories scanned at startup to load additional modules. Any CLI, Loadable or scripted modules located in these paths will be loaded. Extensions are listed in the list, to remove an extension, use the [Extensions Manager](extensions_manager) instead.
 
-It is also possible to start slicer by temporarily adding module paths (not saved in settings) by passing the arguments in the command line. 
+It is also possible to start slicer by temporarily adding module paths (not saved in settings) by passing the arguments in the command line.
 
 For example this command will start Slicer trying to load CLIs found in the specified directory:
 
@@ -50,7 +48,7 @@ List of modules loaded, ignored or failed to load in Slicer. An unchecked checkb
 
 -  Black: module successfully loaded in Slicer
 -  Gray: module not loaded because it has been ignored (unchecked)
--  Red: module failed to load. There are multiple reasons why a module can fail to load. 
+-  Red: module failed to load. There are multiple reasons why a module can fail to load.
 
 Look at startup [log outputs](https://www.slicer.org/wiki/Documentation/Nightly/SlicerApplication/ErrorLog) to have more informations.
 If a module is not loaded in Slicer (ignored or failed), all dependent modules won't be loaded. You can verify the dependencies of a module in the tooltip of the module.
@@ -69,11 +67,25 @@ List of modules that appear in the Favorites toolbar:
 
 To add a module, drag&drop it from the *Modules* list above. Then use the advanced panel (>>) to reorganize/delete the modules within the toolbar.
 
+### Appearance
+
+#### Style
+
+The overall theme of Slicer is controlled by the selected Style:
+- Slicer (default): it sets the style based on theme settings set by the operating system.
+  For example, on Windows if [dark mode][(https://blogs.windows.com/windowsexperience/2016/08/08/windows-10-tip-personalize-your-pc-by-enabling-the-dark-theme/)]
+  is turned on for apps, then the `Dark Slicer` style will be used upon launching Slicer. Currently, automatic detection of dark mode is not available on Linux,
+  therefore use needs to manually select `Dark Slicer` style for a dark color scheme.
+- Light Slicer: application window background is bright, regardless of operating system settings.
+- Dark Slicer: application window background is dark, regardless of operating system settings.
+
 ## Information for Advanced Users
 
 ### Settings file location
 
-Settings are stored in a *.ini files located in directory like these ones:
+Settings are stored in *.ini files. If the settings file is found in application home directory (within organization name or domain subfolder) then that .ini file is used. This can be used for creating a portable application that contains all software and settings in a relocatable folder. Relative paths in settings files are resolved using the application home directory, and therefore are portable along with the application.
+
+If .ini file is not found in the the application home directory then it is searched in user profile:
 
 -  Windows: `%USERPROFILE%\AppData\Roaming\NA-MIC\` (typically `C:\Users\<your_user_name>\AppData\Roaming\NA-MIC\`)
 -  Linux: `~/.config/NA-MIC/`
@@ -81,7 +93,7 @@ Settings are stored in a *.ini files located in directory like these ones:
 
 Deleting the *.ini files restores all the settings to default.
 
-There are two types of settings:
+There are two types of settings: `user specific settings` and `user and revision specific settings`.
 
 #### User specific settings
 
@@ -106,3 +118,28 @@ This file is named like `Slicer-<REVISION>.ini` and it stores settings applying 
 To display the exact location of this settings file, enter the following in the Python interactor:
 
     slicer.app.slicerRevisionUserSettingsFilePath
+
+### Application startup file
+
+Each time Slicer starts, it will look up for a startup script file named <code>.slicerrc.py</code>. Content of this file is executed automatically at each startup of Slicer.
+
+The file is searched at multiple location and the first one that is found is used. Searched locations:
+- Application home folder (`slicer.app.slicerHome`)
+- Path defined in `SLICERRC` environment variable
+- User profile folder (`~/.slicerrc.py`)
+
+You can find the path to the startup script in Slicer by opening in the menu: Edit / Application Settings. ''Application startup script'' path is shown in the ''General'' section (or running `getSlicerRCFileName()` command in Slicer Python console).
+
+### Runtime environment variables
+
+The following environment variables can be set before the application is started to fine-tune its behavior:
+
+- `PYTHONNOUSERSITE`: if it is set to `1` then import of user site packages is disabled.
+- `QT_ENABLE_HIGHDPI_SCALING`: see [Qt documentation](https://doc.qt.io/qt-5/highdpi.html)
+- `QT_SCALE_FACTOR_ROUNDING_POLICY`: see [Qt documentation](https://doc.qt.io/qt-5/highdpi.html)
+- `QTWEBENGINE_REMOTE_DEBUGGING`: port number for Qt webengine remote debugger. Default value is `1337`.
+- `SLICER_OPENGL_PROFILE`: Requested OpenGL profile. Valid values are `no` (no profile), `core` (core profile),
+  and `compatibility` (compatiblity profile). Default value is `compatibility` on Windows systems.
+- `SLICER_BACKGROUND_THREAD_PRIORITY`: Set priority for background processing tasks. On Linux, it may affect the
+  entire process priority. An integer value is expected, default = `20` on Linux and macOS, and `-1` on Windows.
+- `SLICERRC`: Custom application startup file path. Contains a full path to a Python script. By default it is `~/.slicerrc.py` (where ~ is the user profile a.k.a user home folder).

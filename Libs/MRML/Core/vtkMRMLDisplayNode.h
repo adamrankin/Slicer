@@ -22,6 +22,7 @@ class vtkMRMLDisplayableNode;
 
 // VTK includes
 class vtkAlgorithmOutput;
+class vtkDataSet;
 class vtkImageData;
 class vtkPolyData;
 
@@ -315,28 +316,21 @@ public:
   /// \sa SliceIntersectionThickness, SetSliceIntersectionThickness()
   vtkGetMacro(SliceIntersectionThickness, int);
 
-  /// Set the backface culling of the display node.
-  /// \sa FrontfaceCulling, GetFrontfaceCulling(), FrontfaceCullingOn(),
-  /// FrontfaceCullingOff()
+  ///@{
+  /// Enable/disable rendering of cells facing the camera (frontface)
+  /// or facing away from the camera (backface). By culling (excluding from rendering)
+  /// rendering performance of very complex models may be improved and it may also
+  /// simplify appearance of semitransparent models.
+  /// However, if cells are not oriented consistently then enabling culling may make
+  /// a surface appear turned inside out or not just partially rendered.
+  /// Disabled (all faces are rendered) by default.
   vtkSetMacro(FrontfaceCulling, int);
-  /// Get the backface culling of the display node.
-  /// \sa FrontfaceCulling, SetFrontfaceCulling(), FrontfaceCullingOn(),
-  /// FrontfaceCullingOff()
   vtkGetMacro(FrontfaceCulling, int);
-  /// Set the backface culling of the display node.
-  /// \sa FrontfaceCulling, SetFrontfaceCulling(), GetFrontfaceCulling()
   vtkBooleanMacro(FrontfaceCulling, int);
-  /// Set the backface culling of the display node.
-  /// \sa BackfaceCulling, GetBackfaceCulling(), BackfaceCullingOn(),
-  /// BackfaceCullingOff()
   vtkSetMacro(BackfaceCulling, int);
-  /// Get the backface culling of the display node.
-  /// \sa BackfaceCulling, SetBackfaceCulling(), BackfaceCullingOn(),
-  /// BackfaceCullingOff()
   vtkGetMacro(BackfaceCulling, int);
-  /// Set the backface culling of the display node.
-  /// \sa BackfaceCulling, SetBackfaceCulling(), GetBackfaceCulling()
   vtkBooleanMacro(BackfaceCulling, int);
+  ///@}
 
   /// Enable/Disable lighting of the display node.
   /// \sa Lighting, GetLighting(), LightingOn(),
@@ -415,6 +409,15 @@ public:
   /// \sa SetScalarRangeFlag(), SetAutoScalarRange(), GetAutoScalarRange()
   void AutoScalarRangeOn();
   void AutoScalarRangeOff();
+  /// Update the AssignAttribute filter based on its ActiveScalarName
+  /// and its ActiveAttributeLocation
+  /// To be re-implemented in subclasses if scalar display is supported,
+  /// to change active scalar and modify display pipeline if needed.
+  virtual void UpdateAssignedAttribute() {};
+  /// Update the ScalarRange based on the \sa ScalarRangeFlag.
+  /// If \sa UseManualScalarRange is selected then the method has no effect.
+  /// To be re-implemented in subclasses
+  virtual void UpdateScalarRange();
 
   /// Set the scalar range of the display node.
   /// \sa ScalarRange, GetScalarRange()
@@ -425,7 +428,8 @@ public:
 
   /// Set the scalar range to use with color mapping
   /// \sa ScalarRangeFlag, GetScalarRangeFlag(), SetScalarRangeFlagFromString()
-  vtkSetMacro(ScalarRangeFlag, int);
+  /// \sa SetActiveScalarName()
+  virtual void SetScalarRangeFlag(int flag);
   /// Get the interpolation of the surface.
   /// \sa ScalarRangeFlag, SetScalarRangeFlag(), GetScalarRangeFlagAsString()
   vtkGetMacro(ScalarRangeFlag, int);
@@ -501,6 +505,18 @@ public:
   /// Set the active attribute location of the display node from string
   /// \sa ActiveAttributeLocation, SetActiveAttributeLocation()
   void SetActiveAttributeLocationFromString(const char* str);
+  /// Sets active scalar name and attribute location in one step.
+  /// It is preferable to use this method instead of calling SetActiveScalarName
+  /// and SetActiveAttributeLocation separately, to avoid transient states when
+  /// scalar name and location are temporarily inconsistent.
+  virtual void SetActiveScalar(const char *scalarName, int location);
+
+  /// Get data set containing the scalar arrays for this node type.
+  /// For example for models it is the input mesh, and for markups the curve poly data
+  virtual vtkDataSet* GetScalarDataSet() { return nullptr; };
+  /// Return the current active scalar array (based on active scalar name and location)
+  /// To be re-implemented in subclasses based on their contained data
+  virtual vtkDataArray* GetActiveScalarArray() { return nullptr; };
 
   /// Add View Node ID for the view to display this node in.
   /// \sa ViewNodeIDs, RemoveViewNodeID(), RemoveAllViewNodeIDs()

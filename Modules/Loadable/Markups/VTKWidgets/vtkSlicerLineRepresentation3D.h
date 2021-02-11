@@ -77,10 +77,13 @@ protected:
   void UpdateInteractionPipeline() override;
 
   vtkSmartPointer<vtkPolyData> Line;
-  vtkSmartPointer<vtkPolyDataMapper> LineMapper;
-  vtkSmartPointer<vtkActor> LineActor;
-
   vtkSmartPointer<vtkTubeFilter> TubeFilter;
+
+  vtkSmartPointer<vtkPolyDataMapper> LineMapper;
+  vtkSmartPointer<vtkPolyDataMapper> LineOccludedMapper;
+
+  vtkSmartPointer<vtkActor> LineActor;
+  vtkSmartPointer<vtkActor> LineOccludedActor;
 
 private:
   vtkSlicerLineRepresentation3D(const vtkSlicerLineRepresentation3D&) = delete;

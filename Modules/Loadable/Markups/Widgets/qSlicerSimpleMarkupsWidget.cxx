@@ -37,6 +37,7 @@
 
 // Qt includes
 #include <QAction>
+#include <QDebug>
 #include <QMenu>
 #include <QTableWidgetItem>
 
@@ -62,11 +63,11 @@ public:
   virtual void setupUi(qSlicerSimpleMarkupsWidget*);
 
 public:
+  vtkWeakPointer<vtkSlicerMarkupsLogic> MarkupsLogic;
   bool EnterPlaceModeOnNodeChange;
   bool JumpToSliceEnabled;
   int ViewGroup;
 
-  vtkWeakPointer<vtkSlicerMarkupsLogic> MarkupsLogic;
   vtkWeakPointer<vtkMRMLMarkupsNode> CurrentMarkupsNode;
 };
 
@@ -109,20 +110,12 @@ void qSlicerSimpleMarkupsWidget::setup()
 {
   Q_D(qSlicerSimpleMarkupsWidget);
 
-  // This cannot be called by the constructor, because Slicer may not exist when the constructor is called
-  d->MarkupsLogic = nullptr;
-  if (qSlicerApplication::application() != nullptr && qSlicerApplication::application()->moduleManager() != nullptr)
+  d->MarkupsLogic = vtkSlicerMarkupsLogic::SafeDownCast(this->moduleLogic("Markups"));
+  if (!d->MarkupsLogic)
     {
-    qSlicerAbstractCoreModule* markupsModule = qSlicerApplication::application()->moduleManager()->module( "Markups" );
-    if ( markupsModule != nullptr )
-      {
-      d->MarkupsLogic = vtkSlicerMarkupsLogic::SafeDownCast( markupsModule->logic() );
-      }
+    qCritical() << Q_FUNC_INFO << ": Markups module is not found, some markup manipulation features will not be available";
     }
-  if (d->MarkupsLogic == nullptr)
-    {
-    qCritical("qSlicerSimpleMarkupsWidget::setup: Markups module is not found, some markup manipulation features will not be available");
-    }
+
   d->setupUi(this);
 
   connect( d->MarkupsNodeComboBox, SIGNAL( currentNodeChanged( vtkMRMLNode* ) ), this, SLOT( onMarkupsNodeChanged() ) );
@@ -130,8 +123,16 @@ void qSlicerSimpleMarkupsWidget::setup()
   connect( d->MarkupsPlaceWidget, SIGNAL( activeMarkupsPlaceModeChanged(bool) ), this, SIGNAL( activeMarkupsPlaceModeChanged(bool) ) );
 
   d->MarkupsControlPointsTableWidget->setColumnCount( CONTROL_POINT_COLUMNS );
-  d->MarkupsControlPointsTableWidget->setHorizontalHeaderLabels( QStringList() << "Label" << "X" << "Y" << "Z" );
-  d->MarkupsControlPointsTableWidget->horizontalHeader()->setSectionResizeMode( QHeaderView::Stretch );
+  d->MarkupsControlPointsTableWidget->setHorizontalHeaderLabels( QStringList() << "Label" << "R" << "A" << "S" );
+  d->MarkupsControlPointsTableWidget->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+  d->MarkupsControlPointsTableWidget->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+  d->MarkupsControlPointsTableWidget->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+  d->MarkupsControlPointsTableWidget->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
+
+  // Reduce row height to minimum necessary
+  d->MarkupsControlPointsTableWidget->setWordWrap(true);
+  d->MarkupsControlPointsTableWidget->verticalHeader()->setSectionResizeMode(QHeaderView::ResizeToContents);
+
   d->MarkupsControlPointsTableWidget->setContextMenuPolicy( Qt::CustomContextMenu );
   d->MarkupsControlPointsTableWidget->setSelectionBehavior(QAbstractItemView::SelectRows); // only select rows rather than cells
 
@@ -370,7 +371,6 @@ void qSlicerSimpleMarkupsWidget::onMarkupsNodeChanged()
 void qSlicerSimpleMarkupsWidget::onMarkupsNodeAdded( vtkMRMLNode* newNode )
 {
   Q_D(qSlicerSimpleMarkupsWidget);
-
   if (d->MarkupsLogic == nullptr)
     {
     qCritical("qSlicerSimpleMarkupsWidget::onMarkupsNodeAdded failed: Markups module logic is invalid");
@@ -479,18 +479,20 @@ void qSlicerSimpleMarkupsWidget::onMarkupsControlPointSelected(int row, int colu
 
   if (d->JumpToSliceEnabled)
     {
-    vtkMRMLMarkupsNode* currentMarkupsNode = vtkMRMLMarkupsNode::SafeDownCast( this->currentNode() );
-    if ( currentMarkupsNode == nullptr )
+    vtkMRMLMarkupsNode *currentMarkupsNode = vtkMRMLMarkupsNode::SafeDownCast(this->currentNode());
+    if (currentMarkupsNode == nullptr)
       {
       return;
       }
+
     if (d->MarkupsLogic == nullptr)
       {
-      qCritical("qSlicerSimpleMarkupsWidget::onMarkupsControlPointSelected failed: Cannot jump, markups module logic is invalid");
+      qCritical("qSlicerSimpleMarkupsWidget::onMarkupsControlPointSelected "
+                "failed: Cannot jump, markups module logic is invalid");
       return;
       }
     d->MarkupsLogic->JumpSlicesToNthPointInMarkup(currentMarkupsNode->GetID(), row, true /* centered */, d->ViewGroup);
-    }
+  }
 
   emit currentMarkupsControlPointSelectionChanged(row);
   emit currentMarkupsFiducialSelectionChanged(row);
@@ -590,7 +592,11 @@ void qSlicerSimpleMarkupsWidget::updateWidget()
     d->MarkupsControlPointsTableWidget->clear();
     d->MarkupsControlPointsTableWidget->setRowCount( currentMarkupsNode->GetNumberOfControlPoints() );
     d->MarkupsControlPointsTableWidget->setColumnCount( CONTROL_POINT_COLUMNS );
-    d->MarkupsControlPointsTableWidget->setHorizontalHeaderLabels( QStringList() << "Label" << "X" << "Y" << "Z" );
+    d->MarkupsControlPointsTableWidget->setHorizontalHeaderLabels( QStringList() << "Label" << "R" << "A" << "S" );
+    d->MarkupsControlPointsTableWidget->horizontalHeader()->setSectionResizeMode(0, QHeaderView::Stretch);
+    d->MarkupsControlPointsTableWidget->horizontalHeader()->setSectionResizeMode(1, QHeaderView::ResizeToContents);
+    d->MarkupsControlPointsTableWidget->horizontalHeader()->setSectionResizeMode(2, QHeaderView::ResizeToContents);
+    d->MarkupsControlPointsTableWidget->horizontalHeader()->setSectionResizeMode(3, QHeaderView::ResizeToContents);
 
     double controlPointPosition[ 3 ] = { 0, 0, 0 };
     std::string controlPointLabel;

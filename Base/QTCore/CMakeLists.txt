@@ -97,6 +97,8 @@ set(KIT_SRCS
   qSlicerObject.h
   qSlicerPersistentCookieJar.cxx
   qSlicerPersistentCookieJar.h
+  qSlicerRelativePathMapper.cxx
+  qSlicerRelativePathMapper.h
   qSlicerSceneBundleReader.cxx
   qSlicerSceneBundleReader.h
   qSlicerSlicer2SceneReader.cxx
@@ -145,6 +147,7 @@ set(KIT_MOC_SRCS
   qSlicerIO.h
   qSlicerModuleFactoryManager.h
   qSlicerModuleManager.h
+  qSlicerRelativePathMapper.h
   qSlicerSceneBundleReader.h
   qSlicerSlicer2SceneReader.h
   )
@@ -220,7 +223,7 @@ endif()
 # Python wrap
 if(Slicer_USE_PYTHONQT)
   set(VTK_COMMON_PYTHON_LIBRARY
-    vtkWrappingPythonCore # For vtkPythonUtil
+    ${VTK_TARGET_PREFIX}WrappingPythonCore # For vtkPythonUtil
     )
   list(APPEND KIT_target_libraries
     CTKScriptingPythonCore

@@ -113,20 +113,12 @@ void qSlicerMarkupsPlaceWidget::setup()
 {
   Q_D(qSlicerMarkupsPlaceWidget);
 
-  // This cannot be called by the constructor, because Slicer may not exist when the constructor is called
-  d->MarkupsLogic = nullptr;
-  if (qSlicerApplication::application() != nullptr && qSlicerApplication::application()->moduleManager() != nullptr)
-    {
-    qSlicerAbstractCoreModule* markupsModule = qSlicerApplication::application()->moduleManager()->module( "Markups" );
-    if ( markupsModule != nullptr )
-      {
-      d->MarkupsLogic = vtkSlicerMarkupsLogic::SafeDownCast( markupsModule->logic() );
-      }
-    }
-  if (d->MarkupsLogic == nullptr)
+  d->MarkupsLogic = vtkSlicerMarkupsLogic::SafeDownCast(this->moduleLogic("Markups"));
+  if (!d->MarkupsLogic)
     {
     qCritical() << Q_FUNC_INFO << ": Markups module is not found, some markup manipulation features will not be available";
     }
+
   d->setupUi(this);
 
   d->OptionsWidgets << d->ColorButton << d->PlaceButton << d->DeleteButton << d->MoreButton;
@@ -272,6 +264,7 @@ void qSlicerMarkupsPlaceWidget::deleteAllMarkups()
 bool qSlicerMarkupsPlaceWidget::currentNodeActive() const
 {
   Q_D(const qSlicerMarkupsPlaceWidget);
+
   vtkMRMLMarkupsNode* currentMarkupsNode = this->currentMarkupsNode();
   if (d->MarkupsLogic == nullptr || this->mrmlScene() == nullptr ||
       currentMarkupsNode == nullptr || d->InteractionNode == nullptr ||
@@ -289,6 +282,7 @@ bool qSlicerMarkupsPlaceWidget::currentNodeActive() const
 void qSlicerMarkupsPlaceWidget::setCurrentNodeActive(bool active)
 {
   Q_D(qSlicerMarkupsPlaceWidget);
+
   if (d->MarkupsLogic == nullptr || this->mrmlScene() == nullptr || d->InteractionNode == nullptr)
     {
     if (active)
@@ -335,6 +329,7 @@ bool qSlicerMarkupsPlaceWidget::placeModeEnabled() const
 void qSlicerMarkupsPlaceWidget::setPlaceModeEnabled(bool placeEnable)
 {
   Q_D(qSlicerMarkupsPlaceWidget);
+
   if (d->MarkupsLogic == nullptr || this->mrmlScene() == nullptr ||
       d->InteractionNode == nullptr || this->currentMarkupsNode() == nullptr)
     {
@@ -491,8 +486,8 @@ void qSlicerMarkupsPlaceWidget::setMRMLScene(vtkMRMLScene* scene)
 
   if (d->MarkupsLogic != nullptr && d->MarkupsLogic->GetMRMLScene() != nullptr)
     {
-    selectionNode = vtkMRMLSelectionNode::SafeDownCast( d->MarkupsLogic->GetMRMLScene()->GetNodeByID( d->MarkupsLogic->GetSelectionNodeID() ) );
-    interactionNode = vtkMRMLInteractionNode::SafeDownCast( d->MarkupsLogic->GetMRMLScene()->GetNodeByID( "vtkMRMLInteractionNodeSingleton" ) );
+    selectionNode = vtkMRMLSelectionNode::SafeDownCast(d->MarkupsLogic->GetMRMLScene()->GetNodeByID(d->MarkupsLogic->GetSelectionNodeID() ) );
+    interactionNode = vtkMRMLInteractionNode::SafeDownCast(d->MarkupsLogic->GetMRMLScene()->GetNodeByID( "vtkMRMLInteractionNodeSingleton" ) );
     }
 
   this->setInteractionNode(interactionNode);

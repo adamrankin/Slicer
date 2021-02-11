@@ -26,6 +26,7 @@ class DICOMScalarVolumePluginClass(DICOMPlugin):
     self.defaultStudyID = 'SLICER10001' #TODO: What should be the new study ID?
 
     self.tags['sopClassUID'] = "0008,0016"
+    self.tags['photometricInterpretation'] = "0028,0004"
     self.tags['seriesDescription'] = "0008,103e"
     self.tags['seriesUID'] = "0020,000E"
     self.tags['seriesNumber'] = "0020,0011"
@@ -43,7 +44,6 @@ class DICOMScalarVolumePluginClass(DICOMPlugin):
     self.tags['instanceUID'] = "0008,0018"
     self.tags['windowCenter'] = "0028,1050"
     self.tags['windowWidth'] = "0028,1051"
-    self.tags['classUID'] = "0008,0016"
     self.tags['rows'] = "0028,0010"
     self.tags['columns'] = "0028,0011"
 
@@ -266,12 +266,15 @@ class DICOMScalarVolumePluginClass(DICOMPlugin):
           newFiles.append(file)
         if slicer.dicomDatabase.fileValue(file,self.tags['sopClassUID'])=='1.2.840.10008.5.1.4.1.1.66.4':
           excludedLoadable = True
-          logging.error('Please install Quantitative Reporting extension to enable loading of DICOM Segmentation objects')
+          if 'DICOMSegmentationPlugin' not in slicer.modules.dicomPlugins:
+            logging.warning('Please install Quantitative Reporting extension to enable loading of DICOM Segmentation objects')
         elif slicer.dicomDatabase.fileValue(file,self.tags['sopClassUID'])=='1.2.840.10008.5.1.4.1.1.481.3':
           excludedLoadable = True
-          logging.error('Please install SlicerRT extension to enable loading of DICOM RT Structure Set objects')
+          if 'DicomRtImportExportPlugin' not in slicer.modules.dicomPlugins:
+            logging.warning('Please install SlicerRT extension to enable loading of DICOM RT Structure Set objects')
       if len(newFiles) > 0 and not excludedLoadable:
         loadable.files = newFiles
+        loadable.grayscale = ('MONOCHROME' in slicer.dicomDatabase.fileValue(newFiles[0],self.tags['photometricInterpretation']))
         newLoadables.append(loadable)
       elif excludedLoadable:
         continue
@@ -281,6 +284,7 @@ class DICOMScalarVolumePluginClass(DICOMPlugin):
         # them through with a warning and low confidence
         loadable.warning += "There is no pixel data attribute for the DICOM objects, but they might be readable as secondary capture images.  "
         loadable.confidence = 0.2
+        loadable.grayscale = ('MONOCHROME' in slicer.dicomDatabase.fileValue(loadable.files[0],self.tags['photometricInterpretation']))
         newLoadables.append(loadable)
     loadables = newLoadables
 
@@ -356,15 +360,18 @@ class DICOMScalarVolumePluginClass(DICOMPlugin):
     volumesLogic = slicer.modules.volumes.logic()
     return(volumesLogic.AddArchetypeScalarVolume(files[0],name,0,fileList))
 
-  def loadFilesWithSeriesReader(self,imageIOName,files,name):
+  def loadFilesWithSeriesReader(self,imageIOName,files,name,grayscale=True):
     """ Explicitly use the named imageIO to perform the loading
     """
 
-    reader = vtkITK.vtkITKArchetypeImageSeriesScalarReader()
-    reader.SetArchetype(files[0]);
+    if grayscale:
+      reader = vtkITK.vtkITKArchetypeImageSeriesScalarReader()
+    else:
+      reader = vtkITK.vtkITKArchetypeImageSeriesVectorReaderFile()
+    reader.SetArchetype(files[0])
     for f in files:
       reader.AddFileName(f)
-    reader.SetSingleFile(0);
+    reader.SetSingleFile(0)
     reader.SetOutputScalarTypeToNative()
     reader.SetDesiredCoordinateOrientationToNative()
     reader.SetUseNativeOriginOn()
@@ -383,7 +390,6 @@ class DICOMScalarVolumePluginClass(DICOMPlugin):
       logging.error("Could not read scalar volume using %s approach.  Error is: %s" % errorStrings)
       return
 
-
     imageChangeInformation = vtk.vtkImageChangeInformation()
     imageChangeInformation.SetInputConnection(reader.GetOutputPort())
     imageChangeInformation.SetOutputSpacing( 1, 1, 1 )
@@ -391,7 +397,10 @@ class DICOMScalarVolumePluginClass(DICOMPlugin):
     imageChangeInformation.Update()
 
     name = slicer.mrmlScene.GenerateUniqueName(name)
-    volumeNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode", name)
+    if grayscale:
+      volumeNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLScalarVolumeNode", name)
+    else:
+      volumeNode = slicer.mrmlScene.AddNewNodeByClass("vtkMRMLVectorVolumeNode", name)
     volumeNode.SetAndObserveImageData(imageChangeInformation.GetOutputDataObject(0))
     slicer.vtkMRMLVolumeArchetypeStorageNode.SetMetaDataDictionaryFromReader(volumeNode, reader)
     volumeNode.SetRASToIJKMatrix(reader.GetRasToIjkMatrix())
@@ -454,8 +463,15 @@ class DICOMScalarVolumePluginClass(DICOMPlugin):
       except ValueError:
         pass # DICOM tags cannot be parsed to floating point numbers
 
+      sopClassUID = slicer.dicomDatabase.fileValue(file,self.tags['sopClassUID'])
+
+      # initialize color lookup table
+      modality = self.mapSOPClassUIDToModality(sopClassUID)
+      if modality == "PT":
+        displayNode.SetAndObserveColorNodeID(slicer.modules.colors.logic().GetPETColorNodeID(slicer.vtkMRMLPETProceduralColorNode.PETheat))
+
       # initialize quantity and units codes
-      (quantity,units) = self.mapSOPClassUIDToDICOMQuantityAndUnits(slicer.dicomDatabase.fileValue(file,self.tags['classUID']))
+      (quantity,units) = self.mapSOPClassUIDToDICOMQuantityAndUnits(sopClassUID)
       if quantity is not None:
         volumeNode.SetVoxelValueQuantity(quantity)
       if units is not None:
@@ -466,9 +482,9 @@ class DICOMScalarVolumePluginClass(DICOMPlugin):
     """
     volumeNode = self.loadFilesWithArchetype(loadable.files, loadable.name+"-archetype")
     self.setVolumeNodeProperties(volumeNode, loadable)
-    volumeNode = self.loadFilesWithSeriesReader("GDCM", loadable.files, loadable.name+"-gdcm")
+    volumeNode = self.loadFilesWithSeriesReader("GDCM", loadable.files, loadable.name+"-gdcm", loadable.grayscale)
     self.setVolumeNodeProperties(volumeNode, loadable)
-    volumeNode = self.loadFilesWithSeriesReader("DCMTK", loadable.files, loadable.name+"-dcmtk")
+    volumeNode = self.loadFilesWithSeriesReader("DCMTK", loadable.files, loadable.name+"-dcmtk", loadable.grayscale)
     self.setVolumeNodeProperties(volumeNode, loadable)
 
     return volumeNode
@@ -484,11 +500,11 @@ class DICOMScalarVolumePluginClass(DICOMPlugin):
     if readerApproach == "Archetype":
       volumeNode = self.loadFilesWithArchetype(loadable.files, loadable.name)
     elif readerApproach == "GDCM with DCMTK fallback":
-      volumeNode = self.loadFilesWithSeriesReader("GDCM", loadable.files, loadable.name)
+      volumeNode = self.loadFilesWithSeriesReader("GDCM", loadable.files, loadable.name, loadable.grayscale)
       if not volumeNode:
-        volumeNode = self.loadFilesWithSeriesReader("DCMTK", loadable.files, loadable.name)
+        volumeNode = self.loadFilesWithSeriesReader("DCMTK", loadable.files, loadable.name, loadable.grayscale)
     else:
-      volumeNode = self.loadFilesWithSeriesReader(readerApproach, loadable.files, loadable.name)
+      volumeNode = self.loadFilesWithSeriesReader(readerApproach, loadable.files, loadable.name, loadable.grayscale)
     # third, transfer data from the dicom instances into the appropriate Slicer data containers
     self.setVolumeNodeProperties(volumeNode, loadable)
 

@@ -6,8 +6,8 @@
    <rect>
     <x>0</x>
     <y>0</y>
-    <width>274</width>
-    <height>390</height>
+    <width>300</width>
+    <height>433</height>
    </rect>
   </property>
   <property name="sizePolicy">
@@ -17,7 +17,7 @@
    </sizepolicy>
   </property>
   <property name="windowTitle">
-   <string>Module Template</string>
+   <string>Markups</string>
   </property>
   <layout class="QVBoxLayout" name="verticalLayout_2">
    <item>
@@ -113,6 +113,17 @@
        </property>
       </widget>
      </item>
+     <item>
+      <widget class="QPushButton" name="createROIPushButton">
+       <property name="text">
+        <string/>
+       </property>
+       <property name="icon">
+        <iconset resource="../qSlicerMarkupsModule.qrc">
+         <normaloff>:/Icons/MarkupsROIModePlaceAdd.png</normaloff>:/Icons/MarkupsROIModePlaceAdd.png</iconset>
+       </property>
+      </widget>
+     </item>
     </layout>
    </item>
    <item>
@@ -150,6 +161,9 @@
         <property name="selectionMode">
          <enum>QAbstractItemView::ExtendedSelection</enum>
         </property>
+        <property name="indentation">
+         <number>8</number>
+        </property>
         <property name="editMenuActionVisible">
          <bool>false</bool>
         </property>
@@ -159,7 +173,7 @@
     </widget>
    </item>
    <item>
-    <widget class="qMRMLCollapsibleButton" name="CollapsibleGroupBox">
+    <widget class="qMRMLCollapsibleButton" name="displayCollapsibleButton">
      <property name="text">
       <string>Display</string>
      </property>
@@ -735,6 +749,82 @@
     </widget>
    </item>
    <item>
+    <widget class="ctkCollapsibleButton" name="measurementsCollapsibleButton">
+     <property name="text">
+      <string>Measurements</string>
+     </property>
+     <property name="collapsed">
+      <bool>true</bool>
+     </property>
+     <layout class="QVBoxLayout" name="verticalLayout_7">
+      <item>
+       <widget class="QLabel" name="measurementsLabel">
+        <property name="text">
+         <string>No measurement</string>
+        </property>
+       </widget>
+      </item>
+      <item>
+       <widget class="ctkCollapsibleGroupBox" name="MeasurementSettingsCollapsibleGroupBox">
+        <property name="title">
+         <string>Measurement settings</string>
+        </property>
+        <layout class="QVBoxLayout" name="verticalLayout_8">
+         <property name="leftMargin">
+          <number>4</number>
+         </property>
+         <property name="topMargin">
+          <number>4</number>
+         </property>
+         <property name="rightMargin">
+          <number>4</number>
+         </property>
+         <property name="bottomMargin">
+          <number>4</number>
+         </property>
+         <item>
+          <widget class="QTableWidget" name="measurementSettingsTableWidget">
+           <property name="sizePolicy">
+            <sizepolicy hsizetype="Expanding" vsizetype="Preferred">
+             <horstretch>0</horstretch>
+             <verstretch>0</verstretch>
+            </sizepolicy>
+           </property>
+           <property name="frameShape">
+            <enum>QFrame::NoFrame</enum>
+           </property>
+           <property name="sizeAdjustPolicy">
+            <enum>QAbstractScrollArea::AdjustToContents</enum>
+           </property>
+           <property name="editTriggers">
+            <set>QAbstractItemView::NoEditTriggers</set>
+           </property>
+           <property name="selectionMode">
+            <enum>QAbstractItemView::NoSelection</enum>
+           </property>
+           <property name="showGrid">
+            <bool>false</bool>
+           </property>
+           <property name="columnCount">
+            <number>2</number>
+           </property>
+           <attribute name="horizontalHeaderHighlightSections">
+            <bool>false</bool>
+           </attribute>
+           <attribute name="verticalHeaderVisible">
+            <bool>false</bool>
+           </attribute>
+           <column/>
+           <column/>
+          </widget>
+         </item>
+        </layout>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
     <widget class="ctkCollapsibleButton" name="curveSettingsCollapseButton">
      <property name="text">
       <string>Curve Settings</string>
@@ -896,6 +986,37 @@
           </widget>
          </item>
         </layout>
+       </widget>
+      </item>
+     </layout>
+    </widget>
+   </item>
+   <item>
+    <widget class="ctkCollapsibleButton" name="roiSettingsCollapseButton">
+     <property name="text">
+      <string>ROI Settings</string>
+     </property>
+     <property name="collapsed">
+      <bool>true</bool>
+     </property>
+     <layout class="QGridLayout" name="gridLayout_3">
+      <item row="0" column="1" colspan="2">
+       <widget class="QComboBox" name="roiTypeComboBox"/>
+      </item>
+      <item row="3" column="0" colspan="3">
+       <widget class="qMRMLMarkupsROIWidget" name="roiWidget"/>
+      </item>
+      <item row="0" column="0">
+       <widget class="QLabel" name="label_10">
+        <property name="sizePolicy">
+         <sizepolicy hsizetype="Fixed" vsizetype="Preferred">
+          <horstretch>0</horstretch>
+          <verstretch>0</verstretch>
+         </sizepolicy>
+        </property>
+        <property name="text">
+         <string>ROI type:</string>
+        </property>
        </widget>
       </item>
      </layout>
@@ -1174,6 +1295,12 @@
    <container>1</container>
   </customwidget>
   <customwidget>
+   <class>qMRMLWidget</class>
+   <extends>QWidget</extends>
+   <header>qMRMLWidget.h</header>
+   <container>1</container>
+  </customwidget>
+  <customwidget>
    <class>qSlicerWidget</class>
    <extends>QWidget</extends>
    <header>qSlicerWidget.h</header>
@@ -1181,8 +1308,13 @@
   </customwidget>
   <customwidget>
    <class>qMRMLMarkupsDisplayNodeWidget</class>
-   <extends>QWidget</extends>
+   <extends>qMRMLWidget</extends>
    <header>qMRMLMarkupsDisplayNodeWidget.h</header>
+  </customwidget>
+  <customwidget>
+   <class>qMRMLMarkupsROIWidget</class>
+   <extends>QWidget</extends>
+   <header>qMRMLMarkupsROIWidget.h</header>
   </customwidget>
   <customwidget>
    <class>qMRMLSubjectHierarchyTreeView</class>
@@ -1269,8 +1401,8 @@
      <y>393</y>
     </hint>
     <hint type="destinationlabel">
-     <x>290</x>
-     <y>770</y>
+     <x>268</x>
+     <y>480</y>
     </hint>
    </hints>
   </connection>
@@ -1285,8 +1417,8 @@
      <y>393</y>
     </hint>
     <hint type="destinationlabel">
-     <x>290</x>
-     <y>774</y>
+     <x>268</x>
+     <y>484</y>
     </hint>
    </hints>
   </connection>
@@ -1301,8 +1433,24 @@
      <y>285</y>
     </hint>
     <hint type="destinationlabel">
-     <x>260</x>
-     <y>553</y>
+     <x>264</x>
+     <y>453</y>
+    </hint>
+   </hints>
+  </connection>
+  <connection>
+   <sender>qSlicerMarkupsModule</sender>
+   <signal>mrmlSceneChanged(vtkMRMLScene*)</signal>
+   <receiver>markupsDisplayWidget</receiver>
+   <slot>setMRMLScene(vtkMRMLScene*)</slot>
+   <hints>
+    <hint type="sourcelabel">
+     <x>76</x>
+     <y>2</y>
+    </hint>
+    <hint type="destinationlabel">
+     <x>109</x>
+     <y>203</y>
     </hint>
    </hints>
   </connection>

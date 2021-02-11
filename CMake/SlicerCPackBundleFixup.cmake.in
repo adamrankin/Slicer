@@ -60,6 +60,10 @@ function(gp_item_default_embedded_path_override item default_embedded_path_var)
     if(item MATCHES "lib-dynload/[^/]+\\.so$")
       set(path "@fixup_path@/lib/Python/${PYTHON_STDLIB_SUBDIR}/lib-dynload")
     endif()
+    # VTK python modules
+    if(item MATCHES "vtkmodules/[^/]+\\.so$")
+      set(path "@fixup_path@/bin/Python/vtkmodules")
+    endif()
   endif()
 
   set(Slicer_USE_SimpleITK "@Slicer_USE_SimpleITK@")
@@ -75,7 +79,7 @@ function(gp_item_default_embedded_path_override item default_embedded_path_var)
     set(path "@fixup_path@/@Slicer_ITKFACTORIES_DIR@")
   endif()
 
-  foreach(qt_plugin_dir designer iconengines styles audio imageformats sqldrivers platforms)
+  foreach(qt_plugin_dir designer iconengines styles audio imageformats sqldrivers platforms printsupport)
     if(item MATCHES "@Slicer_QtPlugins_DIR@/${qt_plugin_dir}/[^/]+\\.(so|dylib)$")
       set(path "@fixup_path@/@Slicer_QtPlugins_DIR@/${qt_plugin_dir}")
     endif()
@@ -137,6 +141,7 @@ function(fixup_bundle_with_plugins app)
     "${app_dir}/Contents/@Slicer_QtPlugins_DIR@/imageformats/*${suffix}"
     "${app_dir}/Contents/@Slicer_QtPlugins_DIR@/sqldrivers/*${suffix}"
     "${app_dir}/Contents/@Slicer_QtPlugins_DIR@/platforms/*${suffix}"
+    "${app_dir}/Contents/@Slicer_QtPlugins_DIR@/printsupport/*${suffix}"
     )
 
   set(Slicer_BUILD_CLI_SUPPORT "@Slicer_BUILD_CLI_SUPPORT@")
@@ -164,6 +169,13 @@ function(fixup_bundle_with_plugins app)
       # system library, there is no need to fix them.
       # "${app_dir}/Contents/lib/Python/${PYTHON_SITE_PACKAGES_SUBDIR}/*.so"
       #"${app_dir}/Contents/lib/Python/${PYTHON_STDLIB_SUBDIR}/lib-dynload/*.so"
+      )
+  endif()
+
+  set(Slicer_VTK_VERSION_MAJOR "@Slicer_VTK_VERSION_MAJOR@")
+  if(Slicer_USE_PYTHONQT AND ${Slicer_VTK_VERSION_MAJOR} VERSION_GREATER_EQUAL 9)
+    list(APPEND candidates_pattern
+      "${app_dir}/Contents/bin/Python/vtkmodules/vtk*.so"
       )
   endif()
 
@@ -332,7 +344,7 @@ function(fixup_bundle_with_plugins app)
       endforeach()
       # Update executable
       execute_process(COMMAND install_name_tool
-        -rpath "@executable_path/Frameworks" "@loader_path/../../../../../../../../"
+        -add_rpath "@loader_path/../../../../../../../../"
         ${changes} "${qtwebengineprocess_executable}"
         )
       # Create relative symlinks in <package_root>/Contents/Frameworks/QtWebEngineCore.framework

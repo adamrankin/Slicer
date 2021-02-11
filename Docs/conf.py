@@ -40,6 +40,7 @@ extensions = [
     'workaround_recommonmark_issue_191',
     'recommonmark',
     'sphinx_markdown_tables',
+    'notfound.extension',  # Show a better 404 page when an invlid address is entered
 ]
 
 # Add any paths that contain templates here, relative to this directory.
@@ -80,9 +81,26 @@ language = None
 exclude_patterns = ['_build', 'Thumbs.db', '.DS_Store']
 
 # Set EXCLUDE_DEVELOPER_GUIDE=True environment variable to exclude developer guide.
-# It is useful for quicker documentation generation while eiditin user manual.
-if os.environ.get('EXCLUDE_DEVELOPER_GUIDE', None) == 'True':
-    exclude_patterns.append('developer_guide/*')
+# It is useful for quicker documentation generation while eiditing user manual.
+if os.environ.get('EXCLUDE_API_REFERENCE', False) == 'True':
+    print("API reference is excluded from documentation.")
+    exclude_patterns.append('developer_guide/saferef.rst')
+    exclude_patterns.append('developer_guide/teem.rst')
+    exclude_patterns.append('developer_guide/vtkAddon.rst')
+    exclude_patterns.append('developer_guide/vtkITK.rst')
+    exclude_patterns.append('developer_guide/slicer.rst')
+    exclude_patterns.append('developer_guide/mrml.rst')
+
+# sphinx-notfound-page
+# https://github.com/readthedocs/sphinx-notfound-page
+notfound_context = {
+    'title': 'Page Not Found',
+    'body': '''
+<h1>Page Not Found</h1>
+<p>Sorry, we couldn't find that page.</p>
+<p>Try using the search box or go to the homepage.</p>
+''',
+}
 
 # The name of the Pygments (syntax highlighting) style to use.
 pygments_style = 'sphinx'
@@ -92,6 +110,10 @@ todo_include_todos = False
 
 # A string of reStructuredText that will be included at the beginning of every source file that is read.
 rst_prolog = open('global.rst.in', 'r').read()
+
+# If given, this must be the name of an image file (path relative to the configuration directory) that is the logo of the docs.
+# It is placed at the top of the sidebar; its width should therefore not exceed 200 pixels
+html_logo = '_static/images/3D-Slicer-Mark.png'
 
 # -- Options for HTML output ----------------------------------------------
 
@@ -112,8 +134,13 @@ html_theme_options = {
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-# html_static_path = ['_static']
+html_static_path = ['_static']
 
+# These paths are either relative to html_static_path
+# or fully qualified paths (eg. https://...)
+html_css_files = [
+    'css/custom.css',
+]
 
 # -- Options for HTMLHelp output ------------------------------------------
 

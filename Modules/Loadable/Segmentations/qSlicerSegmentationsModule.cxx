@@ -209,39 +209,13 @@ void qSlicerSegmentationsModule::setup()
 qSlicerAbstractModuleRepresentation* qSlicerSegmentationsModule::createWidgetRepresentation()
 {
   qSlicerSegmentationsModuleWidget* moduleWidget = new qSlicerSegmentationsModuleWidget();
-
-  qSlicerAbstractCoreModule* terminologiesModule = qSlicerCoreApplication::application()->moduleManager()->module("Terminologies");
-  if (terminologiesModule)
-    {
-    vtkSlicerTerminologiesModuleLogic* terminologiesLogic = vtkSlicerTerminologiesModuleLogic::SafeDownCast(terminologiesModule->logic());
-    moduleWidget->setTerminologiesLogic(terminologiesLogic);
-    }
-  else
-    {
-    qCritical() << Q_FUNC_INFO << ": Terminologies module is not found";
-    } 
-
   return moduleWidget;
 }
 
 //-----------------------------------------------------------------------------
 vtkMRMLAbstractLogic* qSlicerSegmentationsModule::createLogic()
 {
-  vtkSlicerSegmentationsModuleLogic* moduleLogic = vtkSlicerSegmentationsModuleLogic::New();
-
-  qSlicerAbstractCoreModule* terminologiesModule = qSlicerCoreApplication::application()->moduleManager()->module("Terminologies");
-  if (terminologiesModule)
-    {
-    vtkSlicerTerminologiesModuleLogic* terminologiesLogic = vtkSlicerTerminologiesModuleLogic::SafeDownCast(terminologiesModule->logic());
-    moduleLogic->SetTerminologiesLogic(terminologiesLogic);
-    }
-  else
-    {
-    qCritical() << Q_FUNC_INFO << ": Terminologies module is not found";
-    } 
-
-  return moduleLogic;
-
+  return vtkSlicerSegmentationsModuleLogic::New();
 }
 
 //-----------------------------------------------------------------------------
@@ -272,6 +246,8 @@ void qSlicerSegmentationsModule::onNodeAdded(vtkObject* sceneObject, vtkObject* 
       segmentationsPlugin, SLOT( onSegmentRemoved(vtkObject*,void*) ) );
     qvtkConnect( segmentationNode, vtkSegmentation::SegmentModified,
       segmentationsPlugin, SLOT( onSegmentModified(vtkObject*,void*) ) );
+    qvtkConnect(segmentationNode, vtkMRMLSegmentationNode::DisplayModifiedEvent,
+      segmentationsPlugin, SLOT( onDisplayNodeModified(vtkObject*) ) );
     }
 
   // Connect subject hierarchy modified event to handle renaming segments from subject hierarchy

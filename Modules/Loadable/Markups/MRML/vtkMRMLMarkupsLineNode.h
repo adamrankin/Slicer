@@ -61,13 +61,14 @@ public:
   /// \sa vtkMRMLNode::CopyContent
   vtkMRMLCopyContentDefaultMacro(vtkMRMLMarkupsLineNode);
 
+  /// Return line length (distance between the two line endpoints) in world coordinate system.
+  virtual double GetLineLengthWorld();
+
 protected:
   vtkMRMLMarkupsLineNode();
   ~vtkMRMLMarkupsLineNode() override;
   vtkMRMLMarkupsLineNode(const vtkMRMLMarkupsLineNode&);
   void operator=(const vtkMRMLMarkupsLineNode&);
-
-  void UpdateMeasurementsInternal() override;
 
   /// Calculates the handle to world matrix based on the current control points
   void UpdateInteractionHandleToWorldMatrix() override;

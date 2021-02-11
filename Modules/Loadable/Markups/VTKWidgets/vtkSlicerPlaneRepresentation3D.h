@@ -36,14 +36,17 @@
 #include "vtkSlicerMarkupsWidgetRepresentation3D.h"
 
 class vtkActor;
+class vtkArrayCalculator;
 class vtkAppendPolyData;
 class vtkArrowSource;
 class vtkGlyph3DMapper;
+class vtkLookupTable;
 class vtkMRMLInteractionEventData;
 class vtkPlaneSource;
 class vtkPolyDataMapper;
 class vtkPolyData;
 class vtkTransformPolyDataFilter;
+class vtkTubeFilter;
 
 class VTK_SLICER_MARKUPS_MODULE_VTKWIDGETS_EXPORT vtkSlicerPlaneRepresentation3D : public vtkSlicerMarkupsWidgetRepresentation3D
 {
@@ -83,14 +86,22 @@ protected:
   vtkSlicerPlaneRepresentation3D();
   ~vtkSlicerPlaneRepresentation3D() override;
 
-  vtkNew<vtkPlaneSource>    PlaneFilter;
+  vtkNew<vtkPlaneSource>     PlaneFillFilter;
+  vtkNew<vtkArrowSource>     ArrowFilter;
+  vtkNew<vtkGlyph3D>         ArrowGlypher;
+  vtkNew<vtkTubeFilter>      PlaneOutlineFilter;
+  vtkNew<vtkArrayCalculator> ArrowColorFilter;
+  vtkNew<vtkArrayCalculator> PlaneOutlineColorFilter;
+  vtkNew<vtkArrayCalculator> PlaneFillColorFilter;
+  vtkNew<vtkAppendPolyData>  Append;
 
-  vtkNew<vtkArrowSource>    ArrowFilter;
-  vtkNew<vtkGlyph3D>        ArrowGlypher;
+  vtkNew<vtkActor>           PlaneActor;
+  vtkNew<vtkActor>           PlaneOccludedActor;
 
-  vtkNew<vtkAppendPolyData> Append;
-  vtkNew<vtkPolyDataMapper> PlaneMapper;
-  vtkNew<vtkActor>          PlaneActor;
+  vtkNew<vtkPolyDataMapper>  PlaneMapper;
+  vtkNew<vtkPolyDataMapper>  PlaneOccludedMapper;
+
+  vtkNew<vtkLookupTable>    PlaneColorLUT;
 
   std::string LabelFormat;
 

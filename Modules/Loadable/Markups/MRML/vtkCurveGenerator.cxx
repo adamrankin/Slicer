@@ -51,7 +51,7 @@ vtkCurveGenerator::vtkCurveGenerator()
   this->SetNumberOfInputPorts(2);
 
   this->SetCurveTypeToLinearSpline();
-  this->CurveIsLoop = false;
+  this->CurveIsClosed = false;
   this->NumberOfPointsPerInterpolatingSegment = 5;
   this->KochanekBias = 0.0;
   this->KochanekContinuity = 0.0;
@@ -84,7 +84,7 @@ void vtkCurveGenerator::PrintSelf(std::ostream &os, vtkIndent indent)
   Superclass::PrintSelf(os, indent);
   os << indent << "InputParameters size: " << (this->InputParameters != nullptr ? this->InputParameters->GetNumberOfTuples() : 0) << std::endl;
   os << indent << "CurveType: " << this->GetCurveTypeAsString(this->CurveType) << std::endl;
-  os << indent << "CurveIsLoop: " << this->CurveIsLoop << std::endl;
+  os << indent << "CurveIsClosed: " << this->CurveIsClosed << std::endl;
   os << indent << "KochanekBias: " << this->KochanekBias << std::endl;
   os << indent << "KochanekContinuity: " << this->KochanekContinuity << std::endl;
   os << indent << "KochanekTension: " << this->KochanekTension << std::endl;
@@ -371,7 +371,7 @@ void vtkCurveGenerator::SetParametricFunctionToSpline(vtkPoints* inputPoints, vt
   parametricSpline->SetYSpline(ySpline);
   parametricSpline->SetZSpline(zSpline);
   parametricSpline->SetPoints(inputPoints);
-  parametricSpline->SetClosed(this->CurveIsLoop);
+  parametricSpline->SetClosed(this->CurveIsClosed);
   parametricSpline->SetParameterizeByLength(false);
   this->ParametricFunction = parametricSpline;
 }
@@ -534,6 +534,11 @@ int vtkCurveGenerator::GeneratePoints(vtkPoints* inputPoints, vtkPolyData* input
   this->OutputCurveLength = 0.0;
   this->InterpolatedPointIdsForControlPoints.clear();
 
+  // Initialize pedigree IDs array
+  vtkNew<vtkDoubleArray> outputPedigreeIdArray;
+  outputPedigreeIdArray->SetName("PedigreeIDs");
+  outputPedigreeIdArray->SetNumberOfComponents(1);
+
   switch (this->CurveType)
   {
   case vtkCurveGenerator::CURVE_TYPE_LINEAR_SPLINE:
@@ -541,14 +546,14 @@ int vtkCurveGenerator::GeneratePoints(vtkPoints* inputPoints, vtkPolyData* input
   case vtkCurveGenerator::CURVE_TYPE_KOCHANEK_SPLINE:
   case vtkCurveGenerator::CURVE_TYPE_POLYNOMIAL:
     {
-    if (!this->GeneratePointsFromFunction(inputPoints, outputPoints))
+    if (!this->GeneratePointsFromFunction(inputPoints, outputPoints, outputPedigreeIdArray))
       {
       return 0;
       }
     break;
     }
   case vtkCurveGenerator::CURVE_TYPE_SHORTEST_DISTANCE_ON_SURFACE:
-    if (!this->GeneratePointsFromSurface(inputPoints, inputSurface, outputPoints))
+    if (!this->GeneratePointsFromSurface(inputPoints, inputSurface, outputPoints, outputPedigreeIdArray))
       {
       return 0;
       }
@@ -561,62 +566,71 @@ int vtkCurveGenerator::GeneratePoints(vtkPoints* inputPoints, vtkPolyData* input
   }
 
   outputPolyData->SetPoints(outputPoints);
+  outputPolyData->GetPointData()->AddArray(outputPedigreeIdArray);
   return 1;
 }
 
 //------------------------------------------------------------------------------
-int vtkCurveGenerator::GeneratePointsFromFunction(vtkPoints* inputPoints, vtkPoints* outputPoints)
+int vtkCurveGenerator::GeneratePointsFromFunction(vtkPoints* inputPoints, vtkPoints* outputPoints, vtkDoubleArray* outputPedigreeIdArray)
 {
   int numberOfInputPoints = inputPoints->GetNumberOfPoints();
-  if (numberOfInputPoints <= 1)
-    {
-    return 0;
-    }
-
-  switch (this->CurveType)
-    {
-    case vtkCurveGenerator::CURVE_TYPE_LINEAR_SPLINE:
+  int numberOfSegments = 0;
+  int totalNumberOfPoints = 0;
+  if (numberOfInputPoints >= 2)
+  {
+    switch (this->CurveType)
       {
-      this->SetParametricFunctionToLinearSpline(inputPoints);
-      break;
+      case vtkCurveGenerator::CURVE_TYPE_LINEAR_SPLINE:
+        {
+        this->SetParametricFunctionToLinearSpline(inputPoints);
+        break;
+        }
+      case vtkCurveGenerator::CURVE_TYPE_CARDINAL_SPLINE:
+        {
+        this->SetParametricFunctionToCardinalSpline(inputPoints);
+        break;
+        }
+      case vtkCurveGenerator::CURVE_TYPE_KOCHANEK_SPLINE:
+        {
+        this->SetParametricFunctionToKochanekSpline(inputPoints);
+        break;
+        }
+      case vtkCurveGenerator::CURVE_TYPE_POLYNOMIAL:
+        {
+        this->SetParametricFunctionToPolynomial(inputPoints);
+        break;
+        }
+      default:
+        {
+        vtkErrorMacro("Error: Unrecognized curve type: " << this->CurveType << ".");
+        break;
+        }
       }
-    case vtkCurveGenerator::CURVE_TYPE_CARDINAL_SPLINE:
+    if (this->CurveIsClosed && this->CurveType != vtkCurveGenerator::CURVE_TYPE_POLYNOMIAL)
       {
-      this->SetParametricFunctionToCardinalSpline(inputPoints);
-      break;
+      numberOfSegments = numberOfInputPoints;
       }
-    case vtkCurveGenerator::CURVE_TYPE_KOCHANEK_SPLINE:
+    else
       {
-      this->SetParametricFunctionToKochanekSpline(inputPoints);
-      break;
+      numberOfSegments = (numberOfInputPoints - 1);
       }
-    case vtkCurveGenerator::CURVE_TYPE_POLYNOMIAL:
-      {
-      this->SetParametricFunctionToPolynomial(inputPoints);
-      break;
-      }
-    default:
-      {
-      vtkErrorMacro("Error: Unrecognized curve type: " << this->CurveType << ".");
-      break;
-      }
-    }
-
-  int numberOfSegments = 0; // temporary value
-  if (this->CurveIsLoop && this->CurveType != vtkCurveGenerator::CURVE_TYPE_POLYNOMIAL)
-    {
-    numberOfSegments = numberOfInputPoints;
+    totalNumberOfPoints = this->NumberOfPointsPerInterpolatingSegment * numberOfSegments + 1;
     }
   else
     {
-    numberOfSegments = (numberOfInputPoints - 1);
+    numberOfInputPoints = 0;
     }
 
-  int totalNumberOfPoints = this->NumberOfPointsPerInterpolatingSegment * numberOfSegments + 1;
-  double previousPoint[3];
+  // Initialize pedigree ID array
+  outputPedigreeIdArray->Initialize();
+  outputPedigreeIdArray->SetNumberOfTuples(totalNumberOfPoints);
+  outputPedigreeIdArray->Reset();
+  outputPedigreeIdArray->FillComponent(0, 0.0);
+
+  double previousPoint[3] = { 0.0 };
   for (int pointIndex = 0; pointIndex < totalNumberOfPoints; pointIndex++)
     {
-    double sampleParameter = pointIndex / (double)(totalNumberOfPoints - 1);
+    double sampleParameter = double(pointIndex) / ((double)(totalNumberOfPoints - 1));
     double curvePoint[3];
     this->ParametricFunction->Evaluate(&sampleParameter, curvePoint, nullptr);
     outputPoints->InsertNextPoint(curvePoint);
@@ -628,12 +642,25 @@ int vtkCurveGenerator::GeneratePointsFromFunction(vtkPoints* inputPoints, vtkPoi
     previousPoint[0] = curvePoint[0];
     previousPoint[1] = curvePoint[1];
     previousPoint[2] = curvePoint[2];
+
+    // Calculate pedigree ID for point
+    // Each poly data point corresponding to a control point has the same ID as the control point index,
+    // and the interpolating segment is a fractional value:
+    //   Control points:   0,                  1,                  2, ...
+    //   Poly data points: 0, 0.25, 0.5, 0.75, 1, 1.25, 1.5, 1,75, 2, ...
+    int correspondingControlPointIndex = pointIndex / this->NumberOfPointsPerInterpolatingSegment;
+    int interpolatedPointIndexAfterControlPoint = pointIndex % this->NumberOfPointsPerInterpolatingSegment;
+    double pedigreeId = correspondingControlPointIndex
+      + (double)interpolatedPointIndexAfterControlPoint / this->NumberOfPointsPerInterpolatingSegment;
+    outputPedigreeIdArray->InsertValue(pointIndex, pedigreeId);
   }
+
   return 1;
 }
 
 //------------------------------------------------------------------------------
-int vtkCurveGenerator::GeneratePointsFromSurface(vtkPoints* inputPoints, vtkPolyData* inputSurface, vtkPoints* outputPoints)
+int vtkCurveGenerator::GeneratePointsFromSurface(
+  vtkPoints* inputPoints, vtkPolyData* inputSurface, vtkPoints* outputPoints, vtkDoubleArray* outputPedigreeIdArray)
 {
   // If there is no surface, there are no points. Don't report as an error.
   if (!inputSurface)
@@ -649,7 +676,7 @@ int vtkCurveGenerator::GeneratePointsFromSurface(vtkPoints* inputPoints, vtkPoly
     }
 
   vtkIdType numberOfSegments = 0;
-  if (this->CurveIsLoop)
+  if (this->CurveIsClosed)
     {
     numberOfSegments = numberOfInputPoints;
     }
@@ -705,6 +732,27 @@ int vtkCurveGenerator::GeneratePointsFromSurface(vtkPoints* inputPoints, vtkPoly
     }
   this->InterpolatedPointIdsForControlPoints.push_back(outputPoints->GetNumberOfPoints() - 1);
 
+  // Generate pedigree IDs array
+  outputPedigreeIdArray->Initialize();
+  outputPedigreeIdArray->SetNumberOfTuples(outputPoints->GetNumberOfPoints());
+  outputPedigreeIdArray->Reset();
+  outputPedigreeIdArray->FillComponent(0, 0.0);
+  outputPedigreeIdArray->InsertValue(0, 0.0);
+  int controlPointId = 0;
+  for (int outPointIndex = 1; outPointIndex < outputPoints->GetNumberOfPoints(); ++outPointIndex)
+    {
+    if (outPointIndex > this->InterpolatedPointIdsForControlPoints[controlPointId])
+      {
+      ++controlPointId;
+      }
+
+    vtkIdType prevControlPointInterpolatedId = this->InterpolatedPointIdsForControlPoints[controlPointId-1];
+    vtkIdType currControlPointInterpolatedId = this->InterpolatedPointIdsForControlPoints[controlPointId];
+    double pedigreeId = controlPointId - 1
+      + (double)(outPointIndex-prevControlPointInterpolatedId) / (currControlPointInterpolatedId-prevControlPointInterpolatedId);
+    outputPedigreeIdArray->InsertValue(outPointIndex, pedigreeId);
+    }
+
   return 1;
 }
 
@@ -717,15 +765,19 @@ int vtkCurveGenerator::GenerateLines(vtkPolyData* polyData)
   vtkNew<vtkCellArray> lines;
   if (numberOfPoints > 1)
     {
-    bool loop = (numberOfPoints > 2 && this->CurveIsLoop);
-    vtkIdType numberOfCellPoints = (loop ? numberOfPoints + 1 : numberOfPoints);
+    bool closed = (numberOfPoints > 2 && this->CurveIsClosed);
+    vtkIdType numberOfCellPoints = (closed ? numberOfPoints + 1 : numberOfPoints);
 
     // Only regenerate indices if necessary
     bool needToUpdateLines = true;
     if (lines->GetNumberOfCells() == 1)
       {
       vtkIdType currentNumberOfCellPoints = 0;
+#if VTK_MAJOR_VERSION >= 9 || (VTK_MAJOR_VERSION >= 8 && VTK_MINOR_VERSION >= 90)
+      const vtkIdType* currentCellPoints = nullptr;
+#else
       vtkIdType* currentCellPoints = nullptr;
+#endif
       lines->GetCell(0, currentNumberOfCellPoints, currentCellPoints);
 
       if (currentNumberOfCellPoints == numberOfCellPoints)
@@ -742,7 +794,7 @@ int vtkCurveGenerator::GenerateLines(vtkPolyData* polyData)
         {
         lines->InsertCellPoint(i);
         }
-      if (loop)
+      if (closed)
         {
         lines->InsertCellPoint(0);
         }
@@ -819,7 +871,7 @@ void vtkCurveGenerator::SortByMinimumSpanningTreePosition(vtkPoints* points, vtk
   // 1. construct an undirected graph
   std::vector< double > distances(numberOfPoints * numberOfPoints);
   distances.assign(numberOfPoints * numberOfPoints, 0.0);
-  // 2. find the two farthest-seperated vertices in the distances array
+  // 2. find the two farthest-separated vertices in the distances array
   int treeStartIndex = 0;
   int treeEndIndex = 0;
   double maximumDistance = 0;

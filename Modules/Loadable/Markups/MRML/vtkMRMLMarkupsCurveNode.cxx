@@ -19,7 +19,10 @@
 
 // MRML includes
 #include "vtkCurveGenerator.h"
+#include "vtkCurveMeasurementsCalculator.h"
 #include "vtkMRMLMarkupsDisplayNode.h"
+#include "vtkMRMLMeasurementLength.h"
+#include "vtkMRMLStaticMeasurement.h"
 #include "vtkMRMLScene.h"
 #include "vtkMRMLTransformNode.h"
 #include "vtkMRMLUnitNode.h"
@@ -27,6 +30,7 @@
 
 // VTK includes
 #include <vtkArrayCalculator.h>
+#include <vtkAssignAttribute.h>
 #include <vtkBoundingBox.h>
 #include <vtkCallbackCommand.h>
 #include <vtkCellLocator.h>
@@ -83,8 +87,8 @@ vtkMRMLMarkupsCurveNode::vtkMRMLMarkupsCurveNode()
   this->SurfaceScalarCalculator->SetResultArrayType(VTK_FLOAT);
   this->SetSurfaceDistanceWeightingFunction("activeScalar");
 
-  this->PassThroughFilter = vtkSmartPointer<vtkPassThroughFilter>::New();
-  this->PassThroughFilter->SetInputConnection(this->SurfaceToLocalTransformer->GetOutputPort());
+  this->SurfaceScalarPassThroughFilter = vtkSmartPointer<vtkPassThroughFilter>::New();
+  this->SurfaceScalarPassThroughFilter->SetInputConnection(this->SurfaceToLocalTransformer->GetOutputPort());
 
   this->CurveGenerator->SetCurveTypeToCardinalSpline();
   this->CurveGenerator->SetNumberOfPointsPerInterpolatingSegment(10);
@@ -96,11 +100,58 @@ vtkMRMLMarkupsCurveNode::vtkMRMLMarkupsCurveNode()
   events->InsertNextTuple1(vtkMRMLTransformableNode::TransformModifiedEvent);
   this->AddNodeReferenceRole(this->GetShortestDistanceSurfaceNodeReferenceRole(), this->GetShortestDistanceSurfaceNodeReferenceMRMLAttributeName(), events);
 
-  this->ActiveScalar = "";
+  // Insert curve measurements calculator between curve generator and world transformer filters
+  this->CurveMeasurementsCalculator = vtkSmartPointer<vtkCurveMeasurementsCalculator>::New();
+  this->CurveMeasurementsCalculator->SetMeasurements(this->Measurements);
+  this->CurveMeasurementsCalculator->SetInputConnection(this->CurveGenerator->GetOutputPort());
+  this->CurveMeasurementsCalculator->AddObserver(vtkCommand::ModifiedEvent, this->MRMLCallbackCommand);
+
+  this->ScalarDisplayAssignAttribute = vtkSmartPointer<vtkAssignAttribute>::New();
+
+  this->CurvePolyToWorldTransformer->SetInputConnection(this->CurveMeasurementsCalculator->GetOutputPort());
+
+  this->ShortestDistanceSurfaceActiveScalar = "";
+
+  // Setup measurements calculated for this markup type
+  vtkNew<vtkMRMLMeasurementLength> lengthMeasurement;
+  lengthMeasurement->SetEnabled(false);
+  lengthMeasurement->SetName("length"); // Length measurement is off by default to only show curve name
+  lengthMeasurement->SetInputMRMLNode(this);
+  this->Measurements->AddItem(lengthMeasurement);
+
+  vtkMRMLUnitNode* lengthUnitNode = this->GetUnitNode("length");
+  std::string inverseLengthUnit = (lengthUnitNode ? lengthUnitNode->GetSuffix() : "mm");
+  inverseLengthUnit.append("-1");
+
+  vtkNew<vtkMRMLStaticMeasurement> curvatureMeanMeasurement;
+  curvatureMeanMeasurement->SetName(this->CurveMeasurementsCalculator->GetMeanCurvatureName());
+  curvatureMeanMeasurement->SetUnits(inverseLengthUnit.c_str());
+  curvatureMeanMeasurement->SetEnabled(false); // Curvature calculation is off by default
+  this->Measurements->AddItem(curvatureMeanMeasurement);
+
+  vtkNew<vtkMRMLStaticMeasurement> curvatureMaxMeasurement;
+  curvatureMaxMeasurement->SetName(this->CurveMeasurementsCalculator->GetMaxCurvatureName());
+  curvatureMaxMeasurement->SetUnits(inverseLengthUnit.c_str());
+  curvatureMaxMeasurement->SetEnabled(false); // Curvature calculation is off by default
+  this->Measurements->AddItem(curvatureMaxMeasurement);
+
+  this->CurvatureMeasurementModifiedCallbackCommand = vtkCallbackCommand::New();
+  this->CurvatureMeasurementModifiedCallbackCommand->SetClientData( reinterpret_cast<void *>(this) );
+  this->CurvatureMeasurementModifiedCallbackCommand->SetCallback( vtkMRMLMarkupsCurveNode::OnCurvatureMeasurementModified );
+  curvatureMeanMeasurement->AddObserver(vtkCommand::ModifiedEvent, this->CurvatureMeasurementModifiedCallbackCommand);
+  curvatureMaxMeasurement->AddObserver(vtkCommand::ModifiedEvent, this->CurvatureMeasurementModifiedCallbackCommand);
 }
 
 //----------------------------------------------------------------------------
-vtkMRMLMarkupsCurveNode::~vtkMRMLMarkupsCurveNode() = default;
+vtkMRMLMarkupsCurveNode::~vtkMRMLMarkupsCurveNode()
+{
+  if (this->CurvatureMeasurementModifiedCallbackCommand)
+    {
+    this->CurvatureMeasurementModifiedCallbackCommand->SetClientData(nullptr);
+    this->CurvatureMeasurementModifiedCallbackCommand->Delete();
+    this->CurvatureMeasurementModifiedCallbackCommand = nullptr;
+    }
+}
 
 //----------------------------------------------------------------------------
 void vtkMRMLMarkupsCurveNode::WriteXML(ostream& of, int nIndent)
@@ -1111,25 +1162,14 @@ vtkIdType vtkMRMLMarkupsCurveNode::GetClosestPointPositionAlongCurveWorld(const 
 //---------------------------------------------------------------------------
 void vtkMRMLMarkupsCurveNode::UpdateMeasurementsInternal()
 {
-  this->RemoveAllMeasurements();
-  if (this->GetNumberOfDefinedControlPoints() > 1)
+  // Execute curve measurements calculator (curvature, interpolate control point measurements
+  // and store the results in the curve poly data points as scalars for visualization)
+  if (this->CurveMeasurementsCalculator && this->GetNumberOfControlPoints() > 1)
     {
-    double length = this->GetCurveLengthWorld();
-    std::string printFormat;
-    std::string unit = "mm";
-    vtkMRMLUnitNode* unitNode = GetUnitNode("length");
-    if (unitNode)
-      {
-      if (unitNode->GetSuffix())
-        {
-        unit = unitNode->GetSuffix();
-        }
-      length = unitNode->GetDisplayValueFromValue(length);
-      printFormat = unitNode->GetDisplayStringFormat();
-      }
-    this->SetNthMeasurement(0, "length", length, unit, printFormat);
+    this->CurveMeasurementsCalculator->Update();
     }
-  this->WriteMeasurementsToDescription();
+
+  Superclass::UpdateMeasurementsInternal();
 }
 
 //---------------------------------------------------------------------------
@@ -1155,11 +1195,19 @@ void vtkMRMLMarkupsCurveNode::ProcessMRMLEvents(vtkObject* caller,
     // Trying to run SurfaceScalarCalculator without an active scalar will result in an error message.
     if (surfaceCostFunctionType == vtkSlicerDijkstraGraphGeodesicPath::COST_FUNCTION_TYPE_DISTANCE)
       {
-      this->PassThroughFilter->SetInputConnection(this->SurfaceToLocalTransformer->GetOutputPort());
+      this->SurfaceScalarPassThroughFilter->SetInputConnection(this->SurfaceToLocalTransformer->GetOutputPort());
       }
     else
       {
-      this->PassThroughFilter->SetInputConnection(this->SurfaceScalarCalculator->GetOutputPort());
+      this->SurfaceScalarPassThroughFilter->SetInputConnection(this->SurfaceScalarCalculator->GetOutputPort());
+      }
+    }
+  else if (caller == this->CurveMeasurementsCalculator.GetPointer())
+    {
+    vtkMRMLMarkupsDisplayNode* displayNode = this->GetMarkupsDisplayNode();
+    if (displayNode)
+      {
+      this->InvokeEvent(vtkMRMLDisplayableNode::DisplayModifiedEvent, displayNode);
       }
     }
 
@@ -1252,7 +1300,7 @@ void vtkMRMLMarkupsCurveNode::SetSurfaceDistanceWeightingFunction(const char* fu
 {
   const char* currentFunction = this->SurfaceScalarCalculator->GetFunction();
   if ((currentFunction && function && strcmp(this->SurfaceScalarCalculator->GetFunction(), function) == 0) ||
-    currentFunction == nullptr && function == nullptr)
+    (currentFunction == nullptr && function == nullptr))
     {
     return;
     }
@@ -1271,12 +1319,12 @@ void vtkMRMLMarkupsCurveNode::OnSurfaceModelNodeChanged()
   if (modelNode)
     {
     this->CleanFilter->SetInputConnection(modelNode->GetPolyDataConnection());
-    this->CurveGenerator->SetInputConnection(1, this->PassThroughFilter->GetOutputPort());
+    this->CurveGenerator->SetInputConnection(1, this->SurfaceScalarPassThroughFilter->GetOutputPort());
     }
   else
     {
     this->CleanFilter->RemoveAllInputs();
-    this->CurveGenerator->RemoveInputConnection(1, this->PassThroughFilter->GetOutputPort());
+    this->CurveGenerator->RemoveInputConnection(1, this->SurfaceScalarPassThroughFilter->GetOutputPort());
     }
 }
 
@@ -1323,19 +1371,19 @@ void vtkMRMLMarkupsCurveNode::UpdateSurfaceScalarVariables()
 
   const char* activeScalarName = modelNode->GetActivePointScalarName(vtkDataSetAttributes::SCALARS);
   bool activeScalarChanged = false;
-  if (!activeScalarName && this->ActiveScalar)
+  if (!activeScalarName && this->ShortestDistanceSurfaceActiveScalar)
     {
     activeScalarChanged = true;
     }
-  else if (activeScalarName && !this->ActiveScalar)
+  else if (activeScalarName && !this->ShortestDistanceSurfaceActiveScalar)
     {
     activeScalarChanged = true;
     }
-  else if (activeScalarName && this->ActiveScalar && strcmp(activeScalarName, this->ActiveScalar) != 0)
+  else if (activeScalarName && this->ShortestDistanceSurfaceActiveScalar && strcmp(activeScalarName, this->ShortestDistanceSurfaceActiveScalar) != 0)
     {
     activeScalarChanged = true;
     }
-  this->ActiveScalar = activeScalarName;
+  this->ShortestDistanceSurfaceActiveScalar = activeScalarName;
 
   int numberOfArraysInMesh = pointData->GetNumberOfArrays();
   int numberOfArraysInCalculator = this->SurfaceScalarCalculator->GetNumberOfScalarArrays();
@@ -1375,4 +1423,84 @@ void vtkMRMLMarkupsCurveNode::UpdateSurfaceScalarVariables()
   // Changing the variables doesn't invoke modified, so we need to invoke it here.
   this->SurfaceScalarCalculator->Modified();
   this->Modified();
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsCurveNode::UpdateAssignedAttribute()
+{
+  vtkMRMLMarkupsDisplayNode* displayNode = this->GetMarkupsDisplayNode();
+  if (!displayNode)
+    {
+    return;
+    }
+
+  this->ScalarDisplayAssignAttribute->Assign(
+    displayNode->GetActiveScalarName(),
+    vtkDataSetAttributes::SCALARS,
+    displayNode->GetActiveAttributeLocation() >= 0 ? displayNode->GetActiveAttributeLocation() : vtkAssignAttribute::POINT_DATA);
+
+  // Connect assign attributes filter if scalar visibility is on
+  if (displayNode->GetScalarVisibility())
+    {
+    this->ScalarDisplayAssignAttribute->SetInputConnection(this->CurveMeasurementsCalculator->GetOutputPort());
+    this->CurvePolyToWorldTransformer->SetInputConnection(this->ScalarDisplayAssignAttribute->GetOutputPort());
+    }
+  else
+    {
+    this->ScalarDisplayAssignAttribute->RemoveAllInputConnections(0);
+    this->CurvePolyToWorldTransformer->SetInputConnection(this->CurveMeasurementsCalculator->GetOutputPort());
+    }
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsCurveNode::OnCurvatureMeasurementModified(
+  vtkObject* caller, unsigned long vtkNotUsed(eid), void* clientData, void* vtkNotUsed(callData))
+{
+  vtkMRMLMarkupsCurveNode* self = reinterpret_cast<vtkMRMLMarkupsCurveNode*>(clientData);
+  vtkMRMLStaticMeasurement* measurement = reinterpret_cast<vtkMRMLStaticMeasurement*>(caller);
+  if (!self || !measurement)
+    {
+    return;
+    }
+
+  if (!measurement->GetEnabled())
+    {
+    // measurement is disabled
+    measurement->ClearValue();
+    if (!self->CurveMeasurementsCalculator->GetCalculateCurvature())
+      {
+      // no need to compute and it was not computed, nothing to do
+      return;
+      }
+    // Disable curve measurement calculator if no curvature metric is needed anymore
+    bool isCurvatureComputationNeeded = false;
+    for (int index = 0; index < self->Measurements->GetNumberOfItems(); ++index)
+      {
+      vtkMRMLMeasurement* currentMeasurement = vtkMRMLMeasurement::SafeDownCast(self->Measurements->GetItemAsObject(index));
+      if (currentMeasurement->GetEnabled() && currentMeasurement->GetName()
+        && (!strcmp(currentMeasurement->GetName(), self->CurveMeasurementsCalculator->GetMeanCurvatureName())
+          || !strcmp(currentMeasurement->GetName(), self->CurveMeasurementsCalculator->GetMaxCurvatureName())))
+        {
+        isCurvatureComputationNeeded = true;
+        break;
+        }
+      }
+    if (!isCurvatureComputationNeeded)
+      {
+      self->CurveMeasurementsCalculator->SetCalculateCurvature(false);
+      self->CurveMeasurementsCalculator->Update();
+      }
+    return;
+    }
+
+  // measurement is enabled
+  if (self->CurveMeasurementsCalculator->GetCalculateCurvature() && measurement->GetValueDefined())
+    {
+    // measurement was already on, nothing to do
+    return;
+    }
+
+  // trigger a recompute
+  self->CurveMeasurementsCalculator->SetCalculateCurvature(true);
+  self->CurveMeasurementsCalculator->Update();
 }

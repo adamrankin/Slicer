@@ -789,9 +789,9 @@ vtkMatrix4x4* vtkMRMLMarkupsPlaneNode::GetPlaneToPlaneOffsetMatrix()
 //---------------------------------------------------------------------------
 void vtkMRMLMarkupsPlaneNode::UpdateInteractionHandleToWorldMatrix()
 {
-  double handleX_World[3] = { 0.0 };
-  double handleY_World[3] = { 0.0 };
-  double handleZ_World[3] = { 0.0 };
+  double handleX_World[3] = { 0.0, 0.0, 0.0 };
+  double handleY_World[3] = { 0.0, 0.0, 0.0 };
+  double handleZ_World[3] = { 0.0, 0.0, 0.0 };
   if (this->GetNumberOfControlPoints() < 3)
     {
     return;
@@ -799,8 +799,8 @@ void vtkMRMLMarkupsPlaneNode::UpdateInteractionHandleToWorldMatrix()
 
   this->GetAxesWorld(handleX_World, handleY_World, handleZ_World);
 
-  double origin_Local[3] = { 0 };
-  this->GetOrigin(origin_Local);
+  double origin_World[3] = { 0.0, 0.0, 0.0 };
+  this->GetOriginWorld(origin_World);
 
   vtkNew<vtkMatrix4x4> handleToWorldMatrix;
   for (int i = 0; i < 3; ++i)
@@ -808,7 +808,55 @@ void vtkMRMLMarkupsPlaneNode::UpdateInteractionHandleToWorldMatrix()
     handleToWorldMatrix->SetElement(i, 0, handleX_World[i]);
     handleToWorldMatrix->SetElement(i, 1, handleY_World[i]);
     handleToWorldMatrix->SetElement(i, 2, handleZ_World[i]);
-    handleToWorldMatrix->SetElement(i, 3, origin_Local[i]);
+    handleToWorldMatrix->SetElement(i, 3, origin_World[i]);
     }
   this->InteractionHandleToWorldMatrix->DeepCopy(handleToWorldMatrix);
+}
+
+//---------------------------------------------------------------------------
+double vtkMRMLMarkupsPlaneNode::GetClosestPointOnPlaneWorld(const double posWorld[3], double closestPosWorld[3], bool infinitePlane/*=true*/)
+{
+  if (!posWorld)
+    {
+    vtkErrorMacro("GetClosestPointOnPlaneWorld: Invalid posWorld");
+    return 0.0;
+    }
+  if (!closestPosWorld)
+    {
+    vtkErrorMacro("GetClosestPointOnPlaneWorld: Invalid closestPosWorld");
+    return 0.0;
+    }
+
+  vtkNew<vtkMatrix4x4> planeToWorldMatrix;
+  this->GetPlaneToWorldMatrix(planeToWorldMatrix);
+
+  vtkNew<vtkMatrix4x4> worldToPlaneMatrix;
+  worldToPlaneMatrix->DeepCopy(planeToWorldMatrix);
+  worldToPlaneMatrix->Invert();
+
+  double posWorld4[4] = { posWorld[0], posWorld[1], posWorld[2], 1.0 };
+  double closestPosPlane4[4] = { 0.0, 0.0, 0.0, 0.0 };
+  worldToPlaneMatrix->MultiplyPoint(posWorld4, closestPosPlane4);
+
+  double distanceToPlane = closestPosPlane4[2];
+  closestPosPlane4[2] = 0.0; // Project to plane
+
+  if (!infinitePlane)
+    {
+    double planeBounds[6] = { 0.0, 0.0, 0.0, 0.0, 0.0, 0.0 };
+    this->GetPlaneBounds(planeBounds);
+    for (int i = 0; i < 3; ++i)
+      {
+      closestPosPlane4[i] = std::max(closestPosPlane4[i], planeBounds[2 * i]);
+      closestPosPlane4[i] = std::min(closestPosPlane4[i], planeBounds[2 * i + 1]);
+      }
+    }
+
+  double closestPosWorld4[4] = { 0.0, 0.0, 0.0, 0.0 };
+  planeToWorldMatrix->MultiplyPoint(closestPosPlane4, closestPosWorld4);
+  for (int i = 0; i < 3; ++i)
+    {
+    closestPosWorld[i] = closestPosWorld4[i];
+    }
+  return distanceToPlane;
 }

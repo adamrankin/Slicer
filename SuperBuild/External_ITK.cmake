@@ -36,7 +36,7 @@ if(NOT DEFINED ITK_DIR AND NOT Slicer_USE_SYSTEM_${proj})
 
   ExternalProject_SetIfNotDefined(
     Slicer_${proj}_GIT_TAG
-    "35704a458d1ad9a4a2f2634d38032216ab280823"  # v5.1rc03 with ITK PR#1727 fixing -Wstrict-overflow warning
+    "v5.1.2"
     QUIET
     )
 
@@ -45,7 +45,7 @@ if(NOT DEFINED ITK_DIR AND NOT Slicer_USE_SYSTEM_${proj})
   if(Slicer_USE_TBB)
     list(APPEND EXTERNAL_PROJECT_OPTIONAL_CMAKE_CACHE_ARGS
       -DModule_ITKTBB:BOOL=ON
-      -DTBB_DIR:PATH=${TBB_INSTALL_DIR}/cmake
+      -DTBB_DIR:PATH=${TBB_INSTALL_DIR}/tbb${tbb_ver}/cmake
       )
   endif()
 
@@ -57,6 +57,17 @@ if(NOT DEFINED ITK_DIR AND NOT Slicer_USE_SYSTEM_${proj})
     list(APPEND EXTERNAL_PROJECT_OPTIONAL_CMAKE_CACHE_ARGS
       -DPYTHON_EXECUTABLE:PATH=${PYTHON_EXECUTABLE}
       )
+    if(Slicer_VTK_VERSION_MAJOR STREQUAL "9")
+      list(APPEND EXTERNAL_PROJECT_OPTIONAL_CMAKE_CACHE_ARGS
+        # Required by FindPython3 CMake module used by VTK
+        -DPython3_ROOT_DIR:PATH=${Python3_ROOT_DIR}
+        -DPython3_INCLUDE_DIR:PATH=${Python3_INCLUDE_DIR}
+        -DPython3_LIBRARY:FILEPATH=${Python3_LIBRARY}
+        -DPython3_LIBRARY_DEBUG:FILEPATH=${Python3_LIBRARY_DEBUG}
+        -DPython3_LIBRARY_RELEASE:FILEPATH=${Python3_LIBRARY_RELEASE}
+        -DPython3_EXECUTABLE:FILEPATH=${Python3_EXECUTABLE}
+        )
+    endif()
   endif()
 
   if(Slicer_BUILD_ITKPython)
@@ -93,6 +104,7 @@ if(NOT DEFINED ITK_DIR AND NOT Slicer_USE_SYSTEM_${proj})
     -DITK_LEGACY_REMOVE:BOOL=OFF   #<-- Allow LEGACY ITKv4 features for now.
     -DITK_LEGACY_SILENT:BOOL=ON    #<-- Silence for initial ITKv5 migration.
     -DModule_ITKDeprecated:BOOL=ON #<-- Needed for ITKv5 now. (itkMultiThreader.h and MutexLock backwards compatibility.)
+    -DModule_SimpleITKFilters:BOOL=${Slicer_USE_SimpleITK}
     )
 
 
@@ -160,7 +172,7 @@ if(NOT DEFINED ITK_DIR AND NOT Slicer_USE_SYSTEM_${proj})
 
   ExternalProject_GenerateProjectDescription_Step(${proj})
 
-  set(ITK_DIR ${CMAKE_BINARY_DIR}/${proj}-build)
+  set(ITK_DIR ${EP_BINARY_DIR})
 
   if(NOT DEFINED ITK_VALGRIND_SUPPRESSIONS_FILE)
     set(ITK_VALGRIND_SUPPRESSIONS_FILE ${EP_SOURCE_DIR}/CMake/InsightValgrind.supp)

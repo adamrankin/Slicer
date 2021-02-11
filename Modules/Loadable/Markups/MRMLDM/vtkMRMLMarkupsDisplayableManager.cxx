@@ -11,6 +11,7 @@
 #include <vtkMRMLMarkupsLineNode.h>
 #include <vtkMRMLMarkupsNode.h>
 #include <vtkMRMLMarkupsPlaneNode.h>
+#include <vtkMRMLMarkupsROINode.h>
 
 // MarkupsModule/VTKWidgets includes
 #include <vtkSlicerLineWidget.h>
@@ -27,6 +28,7 @@
 #include <vtkSlicerPointsWidget.h>
 #include <vtkSlicerPointsRepresentation2D.h>
 #include <vtkSlicerPointsRepresentation3D.h>
+#include <vtkSlicerROIWidget.h>
 
 // MRMLDisplayableManager includes
 #include <vtkMRMLDisplayableManagerGroup.h>
@@ -94,6 +96,7 @@ vtkMRMLMarkupsDisplayableManager::vtkMRMLMarkupsDisplayableManager()
   this->Focus.insert("vtkMRMLMarkupsCurveNode");
   this->Focus.insert("vtkMRMLMarkupsClosedCurveNode");
   this->Focus.insert("vtkMRMLMarkupsPlaneNode");
+  this->Focus.insert("vtkMRMLMarkupsROINode");
 
   this->Helper = vtkMRMLMarkupsDisplayableManagerHelper::New();
   this->Helper->SetDisplayableManager(this);
@@ -600,6 +603,10 @@ vtkMRMLMarkupsNode* vtkMRMLMarkupsDisplayableManager::CreateNewMarkupsNode(
     {
     nodeName = "P";
     }
+  else if (markupsNodeClassName == "vtkMRMLMarkupsROINode")
+    {
+    nodeName = "R";
+    }
   nodeName = this->GetMRMLScene()->GenerateUniqueName(nodeName);
 
   vtkMRMLMarkupsNode* markupsNode = vtkMRMLMarkupsNode::SafeDownCast(
@@ -639,9 +646,15 @@ vtkSlicerMarkupsWidget* vtkMRMLMarkupsDisplayableManager::FindClosestWidget(vtkM
 //---------------------------------------------------------------------------
 bool vtkMRMLMarkupsDisplayableManager::CanProcessInteractionEvent(vtkMRMLInteractionEventData* eventData, double &closestDistance2)
 {
+  vtkMRMLInteractionNode* interactionNode = this->GetInteractionNode();
   // New point can be placed anywhere
   int eventid = eventData->GetType();
-  if ( (eventid == vtkCommand::MouseMoveEvent && eventData->GetModifiers() == vtkEvent::NoModifier)
+  // We allow mouse move with the shift modifier to be processed while in place mode so that we can continue to update the
+  // preview positionm, even when using shift + mouse-move to adjust the crosshair position.
+  if ((eventid == vtkCommand::MouseMoveEvent
+       && (eventData->GetModifiers() == vtkEvent::NoModifier ||
+          (eventData->GetModifiers() & vtkEvent::ShiftModifier &&
+           interactionNode && interactionNode->GetCurrentInteractionMode() == vtkMRMLInteractionNode::Place)))
     || eventid == vtkCommand::Move3DEvent
     /*|| (eventid == vtkCommand::LeftButtonPressEvent && eventData->GetModifiers() == vtkEvent::NoModifier)
     || eventid == vtkCommand::LeftButtonReleaseEvent
@@ -649,7 +662,6 @@ bool vtkMRMLMarkupsDisplayableManager::CanProcessInteractionEvent(vtkMRMLInterac
     || eventid == vtkCommand::EnterEvent
     || eventid == vtkCommand::LeaveEvent*/)
     {
-    vtkMRMLInteractionNode *interactionNode = this->GetInteractionNode();
     vtkMRMLSelectionNode *selectionNode = this->GetSelectionNode();
     if (!interactionNode || !selectionNode)
       {
@@ -961,6 +973,10 @@ vtkSlicerMarkupsWidget * vtkMRMLMarkupsDisplayableManager::CreateWidget(vtkMRMLM
   else if (vtkMRMLMarkupsPlaneNode::SafeDownCast(markupsNode))
     {
     widget = vtkSlicerPlaneWidget::New();
+    }
+  else if (vtkMRMLMarkupsROINode::SafeDownCast(markupsNode))
+    {
+    widget = vtkSlicerROIWidget::New();
     }
   else
     {

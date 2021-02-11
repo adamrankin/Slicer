@@ -36,9 +36,6 @@
 //----------------------------------------------------------------------
 vtkMRMLAbstractWidget::vtkMRMLAbstractWidget()
 {
-  this->ApplicationLogic = nullptr;
-  this->Renderer = nullptr;
-
   this->WidgetRep = nullptr;
   this->WidgetState = vtkMRMLAbstractWidget::WidgetStateIdle;
 
@@ -56,7 +53,7 @@ void vtkMRMLAbstractWidget::SetEventTranslation(int widgetState, unsigned long i
 {
   if (widgetState >= static_cast<int>(this->EventTranslators.size()))
     {
-    this->EventTranslators.resize(widgetState +1);
+    this->EventTranslators.resize(widgetState + 1);
     }
   vtkWidgetEventTranslator* translator = this->EventTranslators[widgetState];
   if (!translator)
@@ -119,6 +116,22 @@ void vtkMRMLAbstractWidget::SetKeyboardEventTranslation(
 {
   this->SetKeyboardEventTranslation(WidgetStateAny, modifier, keyCode,
     repeatCount, keySym, widgetEvent);
+}
+
+//-------------------------------------------------------------------------
+vtkWidgetEventTranslator* vtkMRMLAbstractWidget::GetEventTranslator(int widgetState)
+{
+  if (widgetState < 0 || widgetState >= static_cast<int>(this->EventTranslators.size()))
+    {
+    return nullptr;
+    }
+  return this->EventTranslators[widgetState];
+}
+
+//-------------------------------------------------------------------------
+int vtkMRMLAbstractWidget::GetNumberOfEventTranslators()
+{
+  return this->EventTranslators.size();
 }
 
 //-------------------------------------------------------------------------
@@ -342,6 +355,12 @@ void vtkMRMLAbstractWidget::NeedToRenderOff()
     this->WidgetRep->NeedToRenderOff();
     }
 */
+}
+
+//----------------------------------------------------------------------
+vtkRenderer* vtkMRMLAbstractWidget::GetRenderer()
+{
+  return this->Renderer;
 }
 
 //----------------------------------------------------------------------

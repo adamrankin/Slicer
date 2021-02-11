@@ -145,6 +145,9 @@ void qSlicerWebWidgetPrivate::init()
   QObject::connect(this->WebView, SIGNAL(loadProgress(int)),
                    this->ProgressBar, SLOT(setValue(int)));
 
+  QObject::connect(this->WebEnginePage, SIGNAL(pdfPrintingFinished(QString, bool)),
+                   q, SIGNAL(pdfPrintingFinished(QString, bool)));
+
   this->ProgressBar->setVisible(false);
 }
 
@@ -381,6 +384,13 @@ void qSlicerWebWidget::onDownloadFinished(QNetworkReply* reply)
 }
 
 // --------------------------------------------------------------------------
+void qSlicerWebWidget::printToPdf(const QString& filePath)
+{
+  Q_D(qSlicerWebWidget);
+  d->WebEnginePage->printToPdf(filePath);
+}
+
+// --------------------------------------------------------------------------
 void qSlicerWebWidget::initJavascript()
 {
   Q_D(qSlicerWebWidget);
@@ -417,7 +427,10 @@ bool qSlicerWebWidget::acceptNavigationRequest(const QUrl & url, QWebEnginePage:
 {
   Q_D(qSlicerWebWidget);
   Q_ASSERT(d->WebEnginePage);
-  if(d->InternalHosts.contains(url.host()) || !d->HandleExternalUrlWithDesktopService)
+  if(d->InternalHosts.contains(url.host())
+    || url.scheme() == "data" // QWebEngineView::setHtml creates a special URL, which encodes data in the URL, always internal
+    || !d->HandleExternalUrlWithDesktopService // all requests are internal
+    )
     {
     d->NavigationRequestAccepted = d->WebEnginePage->webEnginePageAcceptNavigationRequest(url, type, isMainFrame);
     }

@@ -18,14 +18,16 @@
 // MRML includes
 #include "vtkMRMLMarkupsDisplayNode.h"
 #include "vtkMRMLMarkupsLineNode.h"
-#include "vtkMatrix4x4.h"
+#include "vtkMRMLMeasurementLength.h"
 #include "vtkMRMLScene.h"
 #include "vtkMRMLUnitNode.h"
-#include "vtkTransform.h"
 
 // VTK includes
+#include <vtkCollection.h>
+#include <vtkMatrix4x4.h>
 #include <vtkNew.h>
 #include <vtkObjectFactory.h>
+#include <vtkTransform.h>
 
 // STD includes
 #include <sstream>
@@ -39,6 +41,12 @@ vtkMRMLMarkupsLineNode::vtkMRMLMarkupsLineNode()
 {
   this->MaximumNumberOfControlPoints = 2;
   this->RequiredNumberOfControlPoints = 2;
+
+  // Setup measurements calculated for this markup type
+  vtkNew<vtkMRMLMeasurementLength> lengthMeasurement;
+  lengthMeasurement->SetName("length");
+  lengthMeasurement->SetInputMRMLNode(this);
+  this->Measurements->AddItem(lengthMeasurement);
 }
 
 //----------------------------------------------------------------------------
@@ -62,32 +70,15 @@ void vtkMRMLMarkupsLineNode::PrintSelf(ostream& os, vtkIndent indent)
   Superclass::PrintSelf(os,indent);
 }
 
-//---------------------------------------------------------------------------
-void vtkMRMLMarkupsLineNode::UpdateMeasurementsInternal()
+//----------------------------------------------------------------------------
+double vtkMRMLMarkupsLineNode::GetLineLengthWorld()
 {
-  this->RemoveAllMeasurements();
-  if (this->GetNumberOfDefinedControlPoints(true) == 2)
-    {
-    double p1[3] = { 0.0 };
-    double p2[3] = { 0.0 };
-    this->GetNthControlPointPositionWorld(0, p1);
-    this->GetNthControlPointPositionWorld(1, p2);
-    double length = sqrt(vtkMath::Distance2BetweenPoints(p1, p2));
-    std::string printFormat;
-    std::string unit = "mm";
-    vtkMRMLUnitNode* unitNode = GetUnitNode("length");
-    if (unitNode)
-      {
-      if (unitNode->GetSuffix())
-        {
-        unit = unitNode->GetSuffix();
-        }
-      length = unitNode->GetDisplayValueFromValue(length);
-      printFormat = unitNode->GetDisplayStringFormat();
-      }
-    this->SetNthMeasurement(0, "length", length, unit, printFormat);
-    }
-  this->WriteMeasurementsToDescription();
+  double p1[3] = { 0.0 };
+  double p2[3] = { 0.0 };
+  this->GetNthControlPointPositionWorld(0, p1);
+  this->GetNthControlPointPositionWorld(1, p2);
+  double length = sqrt(vtkMath::Distance2BetweenPoints(p1, p2));
+  return length;
 }
 
 //---------------------------------------------------------------------------

@@ -155,7 +155,7 @@ def importModuleObjects(from_module_name, dest_module_name, type_info):
   dest_module = sys.modules[dest_module_name]
 
   # Skip if module has already been loaded
-  if from_module_name in sys.modules:
+  if from_module_name in dir(dest_module):
     return
 
   # Obtain a reference to the module identified by 'from_module_name'
@@ -332,6 +332,124 @@ def childWidgetVariables(widget):
     if hasattr(childWidget, "name"):
       setattr(ui, childWidget.name, childWidget)
   return ui
+
+def addParameterEditWidgetConnections(parameterEditWidgets, updateParameterNodeFromGUI):
+  """ Add connections to get notification of a widget change.
+
+  The function is useful for calling updateParameterNodeFromGUI method in scripted module widgets.
+
+  Note: Only a few widget classes are supported now. More will be added later. Report any missing classes at discourse.slicer.org.
+
+  Example::
+
+    class SurfaceToolboxWidget(ScriptedLoadableModuleWidget, VTKObservationMixin):
+      ...
+      def setup(self):
+        ...
+        self.parameterEditWidgets = [
+          (self.ui.inputModelSelector, "inputModel"),
+          (self.ui.outputModelSelector, "outputModel"),
+          (self.ui.decimationButton, "decimation"),
+          ...]
+        slicer.util.addParameterEditWidgetConnections(self.parameterEditWidgets, self.updateParameterNodeFromGUI)
+
+      def updateGUIFromParameterNode(self, caller=None, event=None):
+        if self._parameterNode is None or self._updatingGUIFromParameterNode:
+          return
+        self._updatingGUIFromParameterNode = True
+        slicer.util.updateParameterEditWidgetsFromNode(self.parameterEditWidgets, self._parameterNode)
+        self._updatingGUIFromParameterNode = False
+
+      def updateParameterNodeFromGUI(self, caller=None, event=None):
+        if self._parameterNode is None or self._updatingGUIFromParameterNode:
+          return
+        wasModified = self._parameterNode.StartModify()  # Modify all properties in a single batch
+        slicer.util.updateNodeFromParameterEditWidgets(self.parameterEditWidgets, self._parameterNode)
+        self._parameterNode.EndModify(wasModified)
+  """
+
+  for (widget, parameterName) in parameterEditWidgets:
+    widgetClassName = widget.className()
+    if widgetClassName=="QSpinBox":
+      widget.connect("valueChanged(int)", updateParameterNodeFromGUI)
+    elif widgetClassName=="QCheckBox":
+      widget.connect("clicked()", updateParameterNodeFromGUI)
+    elif widgetClassName=="QPushButton":
+      widget.connect("toggled(bool)", updateParameterNodeFromGUI)
+    elif widgetClassName=="qMRMLNodeComboBox":
+      widget.connect("currentNodeIDChanged(QString)", updateParameterNodeFromGUI)
+    elif widgetClassName=="QComboBox":
+      widget.connect("currentIndexChanged(int)", updateParameterNodeFromGUI)
+    elif widgetClassName=="ctkSliderWidget":
+      widget.connect("valueChanged(double)", updateParameterNodeFromGUI)
+
+def removeParameterEditWidgetConnections(parameterEditWidgets, updateParameterNodeFromGUI):
+  """ Remove connections created by :py:meth:`addParameterEditWidgetConnections`.
+  """
+
+  for (widget, parameterName) in parameterEditWidgets:
+    widgetClassName = widget.className()
+    if widgetClassName=="QSpinBox":
+      widget.disconnect("valueChanged(int)", updateParameterNodeFromGUI)
+    elif widgetClassName=="QPushButton":
+      widget.disconnect("toggled(bool)", updateParameterNodeFromGUI)
+    elif widgetClassName=="qMRMLNodeComboBox":
+      widget.disconnect("currentNodeIDChanged(QString)", updateParameterNodeFromGUI)
+    elif widgetClassName=="QComboBox":
+      widget.disconnect("currentIndexChanged(int)", updateParameterNodeFromGUI)
+    elif widgetClassName=="ctkSliderWidget":
+      widget.disconnect("valueChanged(double)", updateParameterNodeFromGUI)
+
+def updateParameterEditWidgetsFromNode(parameterEditWidgets, parameterNode):
+  """ Update widgets from values stored in a vtkMRMLScriptedModuleNode.
+
+  The function is useful for implementing updateGUIFromParameterNode.
+
+  Note: Only a few widget classes are supported now. More will be added later. Report any missing classes at discourse.slicer.org.
+
+  See example in :py:meth:`addParameterEditWidgetConnections` documentation.
+  """
+
+  for (widget, parameterName) in parameterEditWidgets:
+    widgetClassName = widget.className()
+    parameterValue = parameterNode.GetParameter(parameterName)
+    if widgetClassName=="QSpinBox":
+      if parameterValue:
+        widget.value = int(float(parameterValue))
+      else:
+        widget.value = 0
+    if widgetClassName=="ctkSliderWidget":
+      if parameterValue:
+        widget.value = float(parameterValue)
+      else:
+        widget.value = 0.0
+    elif widgetClassName=="QCheckBox" or widgetClassName=="QPushButton":
+      widget.checked = (parameterValue == "true")
+    elif widgetClassName=="QComboBox":
+      widget.setCurrentText(parameterValue)
+    elif widgetClassName=="qMRMLNodeComboBox":
+      widget.currentNodeID = parameterNode.GetNodeReferenceID(parameterName)
+
+def updateNodeFromParameterEditWidgets(parameterEditWidgets, parameterNode):
+  """ Update vtkMRMLScriptedModuleNode from widgets.
+
+  The function is useful for implementing updateParameterNodeFromGUI.
+
+  Note: Only a few widget classes are supported now. More will be added later. Report any missing classes at discourse.slicer.org.
+
+  See example in :py:meth:`addParameterEditWidgetConnections` documentation.
+  """
+
+  for (widget, parameterName) in parameterEditWidgets:
+    widgetClassName = widget.className()
+    if widgetClassName=="QSpinBox" or widgetClassName=="ctkSliderWidget":
+      parameterNode.SetParameter(parameterName, str(widget.value))
+    elif widgetClassName=="QCheckBox" or widgetClassName=="QPushButton":
+      parameterNode.SetParameter(parameterName, "true" if widget.checked else "false")
+    elif widgetClassName=="QComboBox":
+      parameterNode.SetParameter(parameterName, widget.currentText)
+    elif widgetClassName=="qMRMLNodeComboBox":
+      parameterNode.SetNodeReferenceID(parameterName, widget.currentNodeID)
 
 def setSliceViewerLayers(background='keep-current', foreground='keep-current', label='keep-current',
                          foregroundOpacity=None, labelOpacity=None, fit=False, rotateToVolumePlane=False):
@@ -652,7 +770,8 @@ def loadLabelVolume(filename, properties={}, returnNode=False):
   :return: loaded node (if multiple nodes are loaded then a list of nodes).
     If returnNode is True then a status flag and loaded node are returned.
   """
-  return loadNodeFromFile(filename, 'VolumeFile', {'labelmap': True}, returnNode)
+  properties['labelmap'] = True
+  return loadNodeFromFile(filename, 'VolumeFile', properties, returnNode)
 
 def loadShaderProperty(filename, returnNode=False):
   """Load node from file.
@@ -691,6 +810,19 @@ def loadVolume(filename, properties={}, returnNode=False):
   """
   filetype = 'VolumeFile'
   return loadNodeFromFile(filename, filetype, properties, returnNode)
+
+def loadSequence(filename, properties={}):
+  """Load sequence (4D data set) from file.
+
+  :param filename: full path of the file to load.
+  :param properties:
+    - name: this name will be used as node name for the loaded volume
+    - show: display volume in slice viewers after loading is completed
+    - colorNodeID: color node to set in the proxy nodes's display node
+  :return: loaded sequence node.
+  """
+  filetype = 'SequenceFile'
+  return loadNodeFromFile(filename, filetype, properties)
 
 def loadScene(filename, properties={}):
   """Load node from file.
@@ -1156,6 +1288,26 @@ def arrayFromModelPointsModified(modelNode):
   # Trigger re-render
   modelNode.GetDisplayNode().Modified()
 
+def _vtkArrayFromModelData(modelNode, arrayName, location):
+  """Helper function for getting VTK point data array that throws exception
+  with informative error message if the data array is not found.
+  Point or cell data can be selected by setting 'location' argument to 'point' or 'cell'.
+  """
+  if location=='point':
+    modelData = modelNode.GetMesh().GetPointData()
+  elif location=='cell':
+    modelData = modelNode.GetMesh().GetCellData()
+  else:
+    raise ValueError("Location attribute must be set to 'point' or 'cell'")
+  if not modelData or modelData.GetNumberOfArrays() == 0:
+    raise ValueError(f"Input modelNode does not contain {location} data")
+  arrayVtk = modelData.GetArray(arrayName)
+  if not arrayVtk:
+    availableArrayNames = [modelData.GetArrayName(i) for i in range(modelData.GetNumberOfArrays())]
+    raise ValueError("Input modelNode does not contain {0} data array '{1}'. Available array names: '{2}'".format(
+      location, arrayName, "', '".join(availableArrayNames)))
+  return arrayVtk
+
 def arrayFromModelPointData(modelNode, arrayName):
   """Return point data array of a model node as numpy array.
 
@@ -1164,14 +1316,54 @@ def arrayFromModelPointData(modelNode, arrayName):
     See :py:meth:`arrayFromVolume` for details.
   """
   import vtk.util.numpy_support
-  arrayVtk = modelNode.GetPolyData().GetPointData().GetArray(arrayName)
+  arrayVtk = _vtkArrayFromModelData(modelNode, arrayName, 'point')
   narray = vtk.util.numpy_support.vtk_to_numpy(arrayVtk)
   return narray
 
 def arrayFromModelPointDataModified(modelNode, arrayName):
-  """Indicate that modification of a numpy array returned by :py:meth:`arrayFromModelPoints` has been completed."""
-  arrayVtk = modelNode.GetPolyData().GetPointData().GetArray(arrayName)
+  """Indicate that modification of a numpy array returned by :py:meth:`arrayFromModelPointData` has been completed."""
+  arrayVtk = _vtkArrayFromModelData(modelNode, arrayName, 'point')
   arrayVtk.Modified()
+
+def arrayFromModelCellData(modelNode, arrayName):
+  """Return cell data array of a model node as numpy array.
+
+  .. warning:: Important: memory area of the returned array is managed by VTK,
+    therefore values in the array may be changed, but the array must not be reallocated.
+    See :py:meth:`arrayFromVolume` for details.
+  """
+  import vtk.util.numpy_support
+  arrayVtk = _vtkArrayFromModelData(modelNode, arrayName, 'cell')
+  narray = vtk.util.numpy_support.vtk_to_numpy(arrayVtk)
+  return narray
+
+def arrayFromModelCellDataModified(modelNode, arrayName):
+  """Indicate that modification of a numpy array returned by :py:meth:`arrayFromModelCellData` has been completed."""
+  arrayVtk = _vtkArrayFromModelData(modelNode, arrayName, 'cell')
+  arrayVtk.Modified()
+
+def arrayFromMarkupsControlPointData(markupsNode, arrayName):
+  """Return control point data array of a markups node as numpy array.
+
+  .. warning:: Important: memory area of the returned array is managed by VTK,
+    therefore values in the array may be changed, but the array must not be reallocated.
+    See :py:meth:`arrayFromVolume` for details.
+  """
+  import vtk.util.numpy_support
+  for measurementIndex in range(markupsNode.GetNumberOfMeasurements()):
+    measurement = markupsNode.GetNthMeasurement(measurementIndex)
+    doubleArrayVtk = measurement.GetControlPointValues()
+    if doubleArrayVtk and doubleArrayVtk.GetName() == arrayName:
+      narray = vtk.util.numpy_support.vtk_to_numpy(doubleArrayVtk)
+      return narray
+
+def arrayFromMarkupsControlPointDataModified(markupsNode, arrayName):
+  """Indicate that modification of a numpy array returned by :py:meth:`arrayFromMarkupsControlPointData` has been completed."""
+  for measurementIndex in range(markupsNode.GetNumberOfMeasurements()):
+    measurement = markupsNode.GetNthMeasurement(measurementIndex)
+    doubleArrayVtk = measurement.GetControlPointValues()
+    if doubleArrayVtk and doubleArrayVtk.GetName() == arrayName:
+      doubleArrayVtk.Modified()
 
 def arrayFromModelPolyIds(modelNode):
   """Return poly id array of a model node as numpy array.
@@ -1315,7 +1507,7 @@ def updateTransformMatrixFromArray(transformNode, narray, toWorld = False):
     transformNode.SetMatrixTransformToParent(vmatrix)
 
 def arrayFromGridTransformModified(gridTransformNode):
-  """Indicate that modification of a numpy array returned by :py:meth:`arrayFromModelPoints` has been completed."""
+  """Indicate that modification of a numpy array returned by :py:meth:`arrayFromGridTransform` has been completed."""
   transformGrid = gridTransformNode.GetTransformFromParent()
   displacementGrid = transformGrid.GetDisplacementGrid()
   displacementGrid.GetPointData().GetScalars().Modified()
@@ -1564,7 +1756,7 @@ def arrayFromTableColumn(tableNode, columnName):
   return narray
 
 def arrayFromTableColumnModified(tableNode, columnName):
-  """Indicate that modification of a numpy array returned by :py:meth:`arrayFromModelPoints` has been completed."""
+  """Indicate that modification of a numpy array returned by :py:meth:`arrayFromTableColumn` has been completed."""
   import vtk.util.numpy_support
   columnData = tableNode.GetTable().GetColumnByName(columnName)
   columnData.Modified()
@@ -1900,13 +2092,13 @@ def messageBox(text, parent=None, **kwargs):
 def createProgressDialog(parent=None, value=0, maximum=100, labelText="", windowTitle="Processing...", **kwargs):
   """Display a modal QProgressDialog.
 
-  Go to `QProgressDialog documentation <http://pyqt.sourceforge.net/Docs/PyQt4/qprogressdialog.html>`_ to
+  Go to `QProgressDialog documentation <https://doc.qt.io/qt-5/qprogressdialog.html>`_ to
   learn about the available keyword arguments.
 
   Examples::
 
     # Prevent progress dialog from automatically closing
-    progressbar = createProgressIndicator(autoClose=False)
+    progressbar = createProgressDialog(autoClose=False)
 
     # Update progress value
     progressbar.value = 50
@@ -2344,20 +2536,27 @@ def plot(narray, xColumnIndex = -1, columnNames = None, title = None, show = Tru
 
   return chartNode
 
-def launchConsoleProcess(args, useStartupEnvironment=True, cwd=None):
+def launchConsoleProcess(args, useStartupEnvironment=True, updateEnvironment=None, cwd=None):
   """Launch a process. Hiding the console and captures the process output.
   The console window is hidden when running on Windows.
   :param args: executable name, followed by command-line arguments
   :param useStartupEnvironment: launch the process in the original environment as the original Slicer process
+  :param updateEnvironment: map containing optional additional environment variables (existing variables are overwritten)
   :param cwd: current working directory
   :return: process object.
   """
   import subprocess
+  import os
   if useStartupEnvironment:
     startupEnv = startupEnvironment()
+    if updateEnvironment:
+      startupEnv.update(updateEnvironment)
   else:
-    startupEnv = None
-  import os
+    if updateEnvironment:
+      startupEnv = os.environ.copy()
+      startupEnv.update(updateEnvironment)
+    else:
+      startupEnv = None
   if os.name == 'nt':
     # Hide console window (only needed on Windows)
     info = subprocess.STARTUPINFO()

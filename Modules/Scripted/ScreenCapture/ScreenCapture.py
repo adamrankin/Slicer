@@ -885,7 +885,7 @@ class ScreenCaptureLogic(ScriptedLoadableModuleLogic):
     # List of mirror sites to attempt download ffmpeg pre-built binaries from
     urls = []
     if os.name == 'nt':
-      urls.append('http://ffmpeg.zeranoe.com/builds/win64/static/ffmpeg-3.2.4-win64-static.zip')
+      urls.append('https://github.com/Slicer/SlicerBinaryDependencies/releases/download/ffmpeg/ffmpeg-3.2.4-win64-static.zip')
     else:
       # TODO: implement downloading for Linux/MacOS?
       pass
@@ -917,16 +917,16 @@ class ScreenCaptureLogic(ScriptedLoadableModuleLogic):
   def getFfmpegPath(self):
     settings = qt.QSettings()
     if settings.contains('General/ffmpegPath'):
-      return settings.value('General/ffmpegPath')
+      return slicer.app.toSlicerHomeAbsolutePath(settings.value('General/ffmpegPath'))
     return ''
 
   def setFfmpegPath(self, ffmpegPath):
     # don't save it if already saved
     settings = qt.QSettings()
     if settings.contains('General/ffmpegPath'):
-      if ffmpegPath == settings.value('General/ffmpegPath'):
+      if ffmpegPath == slicer.app.toSlicerHomeAbsolutePath(settings.value('General/ffmpegPath')):
         return
-    settings.setValue('General/ffmpegPath',ffmpegPath)
+    settings.setValue('General/ffmpegPath', slicer.app.toSlicerHomeRelativePath(ffmpegPath))
 
   def setWatermarkPosition(self, watermarkPosition):
     self.watermarkPosition = watermarkPosition
@@ -1321,8 +1321,8 @@ class ScreenCaptureLogic(ScriptedLoadableModuleLogic):
         if imageIndex == 0:
           # First image, initialize output lightbox image
           imageDimensions = image.GetDimensions()
-          lightboxImageExtent = [0, numberOfColumns * imageDimensions[0] + (numberOfColumns - 1) * imageMarginSizePixels,
-            0, numberOfRows * imageDimensions[1] + (numberOfRows - 1) * imageMarginSizePixels,
+          lightboxImageExtent = [0, numberOfColumns * imageDimensions[0] + (numberOfColumns - 1) * imageMarginSizePixels - 1,
+            0, numberOfRows * imageDimensions[1] + (numberOfRows - 1) * imageMarginSizePixels - 1,
             0, 0]
           lightboxCanvas = vtk.vtkImageCanvasSource2D()
           lightboxCanvas.SetNumberOfScalarComponents(3)
@@ -1333,7 +1333,7 @@ class ScreenCaptureLogic(ScriptedLoadableModuleLogic):
           lightboxCanvas.FillBox(*lightboxImageExtent[0:4])
 
         drawingPosition = [column * (imageDimensions[0] + imageMarginSizePixels),
-          lightboxImageExtent[3] - (row + 1) * (imageDimensions[1] + imageMarginSizePixels)]
+          lightboxImageExtent[3] - (row + 1) * imageDimensions[1] - row * imageMarginSizePixels + 1]
         lightboxCanvas.DrawImage(drawingPosition[0], drawingPosition[1], image)
 
     lightboxCanvas.Update()

@@ -194,6 +194,17 @@ bool vtkMRMLCameraWidget::CanProcessInteractionEvent(vtkMRMLInteractionEventData
     return true;
     }
 
+  // By processing the SetCrosshairPosition action at this point, rather than in ProcessInteractionEvent,
+  // we allow other widgets to perform actions at the same time.
+  // For example, this allows markup preview to remain visible in place mode while adjusting slice position
+  // with shift + mouse-move.
+  if (this->WidgetState == WidgetStateIdle
+    && eventData->GetType() == vtkCommand::MouseMoveEvent
+    && eventData->GetModifiers() & vtkEvent::ShiftModifier)
+    {
+    this->ProcessSetCrosshair(eventData);
+    }
+
   distance2 = 1e10; // we can process this event but we let more specific widgets to claim it (if they are closer)
   return true;
 }
@@ -369,7 +380,7 @@ bool vtkMRMLCameraWidget::ProcessInteractionEvent(vtkMRMLInteractionEventData* e
       break;
 
     case WidgetEventSetCrosshairPosition:
-      processedEvent = this->ProcessSetCrosshair(eventData);
+      // Event is handled in CanProcessInteractionEvent
       break;
     default:
       processedEvent = false;
@@ -527,9 +538,10 @@ bool vtkMRMLCameraWidget::ProcessSetCrosshair(vtkMRMLInteractionEventData* event
     {
     // Try to get view group of the 3D view and jump only those slices.
     int viewGroup = -1; // jump all by default
-    if (this->GetCameraNode() && this->GetCameraNode()->GetActiveTag())
+    if (this->GetCameraNode() && this->GetCameraNode()->GetLayoutName())
       {
-      vtkMRMLAbstractViewNode* viewNode = vtkMRMLAbstractViewNode::SafeDownCast(scene->GetNodeByID(this->GetCameraNode()->GetActiveTag()));
+      vtkMRMLViewNode* viewNode = vtkMRMLViewNode::SafeDownCast(
+        scene->GetSingletonNode(this->GetCameraNode()->GetLayoutName(), "vtkMRMLViewNode"));
       if (viewNode)
         {
         viewGroup = viewNode->GetViewGroup();
@@ -902,7 +914,8 @@ bool vtkMRMLCameraWidget::Dolly(double factor)
     if (this->GetCameraNode() && this->GetCameraNode()->GetScene())
       {
       vtkMRMLScene* scene = this->GetCameraNode()->GetScene();
-      vtkMRMLViewNode* viewNode = vtkMRMLViewNode::SafeDownCast(scene->GetNodeByID(this->GetCameraNode()->GetActiveTag()));
+      vtkMRMLViewNode* viewNode = vtkMRMLViewNode::SafeDownCast(
+        scene->GetSingletonNode(this->GetCameraNode()->GetLayoutName(), "vtkMRMLViewNode"));
       if (viewNode)
         {
         viewNode->SetFieldOfView(camera->GetParallelScale());

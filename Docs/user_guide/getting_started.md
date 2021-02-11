@@ -8,20 +8,14 @@ Welcome to the 3D Slicer community. This page contains information that you need
 
 ### Operating system versions
 
-|               |Windows                                        |macOS                             |Linux                                     |
-|---------------|-----------------------------------------------|----------------------------------|------------------------------------------|
-|Stable Release |Windows 10 or later<br>Windows 8.1<br>Windows 7|OS X Mavericks (10.9) or later    |Ubuntu 16.04 or later<br>CentOS 7 or later|
-|Preview Release|Windows 10 or later<br>Windows 8.1<br>Windows 7|macOS High Sierra (10.13) or later|Ubuntu 18.04 or later<br>CentOS 7 or later|
+- Windows: Windows 10, with all recommended updates installed. Windows 10 Version 1903 (May 2019 Update) version is required for support of international characters (UTF-8) in filenames and text. Microsoft does not support Windows 8.1 and Windows 7 anymore and Slicer is not tested on these legacy operating system versions, but may still work.
+- macOS: macOS High Sierra (10.13) or later. Latest public release is recommended.
+- Linux: Ubuntu 18.04 or later<br>CentOS 7 or later. Latest LTS (Long-term-support) version is recommended.
 
-**Notes:**
-- It is always recommended to use the latest public release of Windows or macOS.  For Linux, this would be the latest LTS (Long-term-support) version.
-- Slicer is expected to work on the vast majority of desktop and server Linux distributions. The system is required to provide at least GLIBC 2.17 and GLIBCCC 3.4.19. For more details, read [here](https://www.python.org/dev/peps/pep-0599/#the-manylinux2014-policy).
-- Only 64-bit Slicer installers are available to download. Developers can attempt to build 32-bit versions on their own if they need to run Slicer on a 32-bit operating system. That said, this should be carefully considered as many clinical research tasks, such as processing of large CT or MR volumetric datasets, require more memory than can be accommodated with a 32-bit program.
-
-### Recommended hardware configuration:
+### Recommended hardware configuration
 - Memory: more than 4GB (8 or more is recommended). As a general rule, have 10x more memory than the amount of data that you load.
 - Display: a minimum resolution of 1024 by 768 (1280 by 1024 or better is recommended).
-- Graphics: . Dedicated graphics hardware (discrete GPU) memory is recommended for fast volume rendering.
+- Graphics: Dedicated graphics hardware (discrete GPU) memory is recommended for fast volume rendering.
 GPU: Graphics must support minimum OpenGL 3.2. Integrated graphics card is sufficient for basic visualization. Discrete graphics card (such as NVidia GPU) is recommended for interactive 3D volume rendering and fast rendering of complex scenes. GPU texture memory (VRAM) should be larger than your largest dataset (e.g., working with 2GB data, get VRAM > 4GB) and check that your images fit in maximum texture dimensions of your GPU hardware. Except rendering, most calculations are performed on CPU, therefore having a faster GPU will generally not impact the overall speed of the application.
 - Some computations in 3D Slicer are multi-threaded and will benefit from multi core, multi CPU configurations.
 - Interface device: a three button mouse with scroll wheel is recommended. Pen, multi-touchscreen, touchpad, and graphic tablet are supported. All OpenVR-compatible virtual reality headsets are supported for virtual reality display.
@@ -33,33 +27,48 @@ To download Slicer, click [here](http://download.slicer.org/).
 
 ![](https://github.com/Slicer/Slicer/releases/download/docs-resources/getting_started_download.png)
 
-The "Preview Release" of 3D Slicer is updated daily (process starts at 11pm ET and takes few hours to complete) and represents the latest development including new features and fixes.
-The "Stable Release" is usually updated a few times a year and is more rigorously tested.
-
-Slicer is generally simple to install on all platforms. It is possible to install multiple versions of the application on the same user account and they will not interfere with each other. If you run into mysterious problems with your installation you can try deleting the [application settings files](settings.html#settings-file-location).
+**Notes:**
+- The "Preview Release" of 3D Slicer is updated daily (process starts at 11pm ET and takes few hours to complete) and represents the latest development including new features and fixes.
+- The "Stable Release" is usually updated a few times a year and is more rigorously tested.
+- Slicer is generally simple to install on all platforms. It is possible to install multiple versions of the application on the same user account and they will not interfere with each other. If you run into mysterious problems with your installation you can try deleting the [application settings files](settings.html#settings-file-location).
+- Only 64-bit Slicer installers are available to download. Developers can attempt to build 32-bit versions on their own if they need to run Slicer on a 32-bit operating system. That said, this should be carefully considered as many clinical research tasks, such as processing of large CT or MR volumetric datasets, require more memory than can be accommodated with a 32-bit program.
 
 Once downloaded, follow the instructions below to complete installation:
 
 ### Windows
 
-- Run the installer
+- Run the installer.
+  - Current limitation: Installation path must only contain English ([ASCII printable](https://en.wikipedia.org/wiki/ASCII#Printable_characters)) characters because otherwise some Python packages may not load correctly (see this [issue](https://github.com/Slicer/Slicer/issues/5383) for more details).
 - Run Slicer from the Windows start menu
 - Use "Apps & features" in Windows settings to remove the application
 
 ### Mac
 
-- Drag the Slicer application to your Applications folder or other location of your choice.
+- Drag the Slicer application (Slicer.app) to your Applications folder or other location of your choice.
 - You cannot install extensions into the read-only volume so you must copy before installing extensions.
 - Delete the Slicer.app folder to uninstall
+
+Installing Preview Release: Currently, preview release packages are not signed. Therefore, when the application is started the first time the following message is displayed: "Slicer... can't be opened because it is from an unidentified developer". To resolve this error, locate the application in Finder and right-click (two-finger click) and click `Open`. When it says `This app can’t be opened` go ahead and hit cancel. Right click again and say `Open` (yes, you need to repeat the same as you did before - the outcome will be different than the first time). Click the `Open` (or `Open anyway`) button to start the application. See more explanation and alternative techniques [here](https://support.apple.com/en-my/guide/mac-help/mh40616/mac).
 
 ### Linux
 
 - Open the tar.gz archive and copy directory to the location of your choice. Run the Slicer executable.
 - Remove the directory to uninstall
 
+**Note:** Slicer is expected to work on the vast majority of desktop and server Linux distributions. The system is required to provide at least GLIBC 2.17 and GLIBCCC 3.4.19. For more details, read [here](https://www.python.org/dev/peps/pep-0599/#the-manylinux2014-policy).
+
+#### Debian / Ubuntu
 The following may be needed on fresh debian or ubuntu:
 
     sudo apt-get install libpulse-dev libnss3 libglu1-mesa
+    sudo apt-get install --reinstall libxcb-xinerama0
+    
+To run Slicer-4.11-2020-09-30 on older debian (e.g. debian 9) you may also need:
+
+    sudo apt-get install libxcb-icccm4-dev libxcb-image0-dev libxcb-keysyms1-dev libxcb-randr0 libxcb-render-util0 libxcb-xkb-dev libxkbcommon-x11-dev
+
+#### ArchLinux
+ArchLinux runs the `strip` utility by default; this needs to be disabled in order to run Slicer binaries.  For more information see [this thread on the Slicer Forum](https://discourse.slicer.org/t/could-not-load-dicom-data/14211/5).
 
 ## Using Slicer
 
@@ -81,7 +90,9 @@ Open 3D Slicer and using the Welcome panel either load your own data or download
 
 #### View data
 
-You can customize views by clicking on the push pin in the top left corner of viewer. In the slice viewers, the horizontal bar can be used to scroll through slices or select a slice.
+Data module's Subject hierarchy tab shows all data sets in the scene. Click the "eye" icon to show/hide an item in all views.
+
+You can customize views (show orientation marker, ruler, change orientation, transparency) by clicking on the push pin in the top left corner of viewer. In the slice viewers, the horizontal bar can be used to scroll through slices or select a slice.
 
 ![](https://github.com/Slicer/Slicer/releases/download/docs-resources/getting_started_view_controllers.png)
 
@@ -92,7 +103,7 @@ You can customize views by clicking on the push pin in the top left corner of vi
 - [Welcome](modules/welcome): The default module when 3D Slicer is started. The panel features options for loading data and customizing 3D Slicer. Below those options are drop-down boxes that contain essential information for using 3D Slicer.
 - [Data](modules/data): acts as a central data-organizing hub. Lists all data currently in the scene and allows basic operations such as search, rename, delete and move.
 - [DICOM](modules/dicom): Import and export DICOM objects, such as images, segmentations, strucutre sets, radiation therapy objects, etc.
-- [Volumes](modules/volumes):: Used for changing the appearance of various volume types.
+- [Volumes](modules/volumes): Used for changing the appearance of various volume types.
 - [Volume Rendering](modules/volumerendering): Provides interactive visualization of 3D image data.
 - [Segmentations](modules/segmentations): Edit display properties and import/export segmentations.
 - [Segment Editor](modules/segmenteditor): Segment 3D volumes using various manual, semi-automatic, and automatic tools.
@@ -100,15 +111,19 @@ You can customize views by clicking on the push pin in the top left corner of vi
 - [Models](modules/models): Loads and adjusts display parameters of models. Allows the user to change the appearance of and organize 3D surface models.
 - [Transforms](modules/transforms): This module is used for creating and editing transformation matrices. You can establish these relations by moving nodes from the Transformable list to the Transformed list or by dragging the nodes under the Transformation nodes in the Data module.
 
+#### Save data
+
+Data sets loaded into the application can be saved using Save data dialog or exported to DICOM format using DICOM module. Detailes are described in [Data loading and saving section](data_loading_and_saving).
+
 #### Extensions
 
-3D Slicer supports plug-ins that are called extensions. An extension could be seen as a delivery package bundling together one or more Slicer modules. After installing an extension, the associated modules will be presented to the user as built-in ones. Extensions can be downloaded from the extension manager to selectively install features that are useful for the end-user.
+3D Slicer supports plug-ins that are called extensions. An extension could be seen as a delivery package bundling together one or more Slicer modules. After installing an extension, the associated modules will be presented to the user as built-in ones. Extensions can be downloaded from the extensions manager to selectively install features that are useful for the end-user.
 
 ![](https://github.com/Slicer/Slicer/releases/download/docs-resources/getting_started_module_list.png)
 
 ![](https://github.com/Slicer/Slicer/releases/download/docs-resources/getting_started_extensions_manager.png)
 
-For details about downloading extensions, see [Extension Manager documentation](extension_manager).
+For details about downloading extensions, see [Extensions Manager documentation](extensions_manager).
 Click [here](https://www.slicer.org/wiki/Documentation/Nightly/ModuleExtensionListing/Extensions_by_category) for a full list of extensions. The links on the page will provide documentation for each extension.
 
 Slicer is extensible. If you are interested in customizing or adding functionality to Slicer, click [here](https://www.slicer.org/wiki/Documentation/Nightly/Training#Tutorials_for_software_developers).

@@ -98,6 +98,9 @@ public:
   /// \param itemID Subject Hierarchy item to show the visibility context menu items for
   void showVisibilityContextMenuActionsForItem(vtkIdType itemID) override;
 
+  /// Show an item in a selected view.
+  bool showItemInView(vtkIdType itemID, vtkMRMLAbstractViewNode* viewNode, vtkIdList* allItemsToShow) override;
+
 public:
   /// Show volume in all slice views. The argument node replaces any volume shown on the specified layer
   /// \param node Volume node to show
@@ -133,8 +136,13 @@ protected slots:
   void onSliceCompositeNodeModified();
 
   /// Toggle flag determining whether field of view in slice views is reset when showing a volume
-  /// in subject hierarchy. By default it is off. State is stored in the application settings.
+  /// in subject hierarchy. By default it is on. State is stored in the application settings.
   void toggleResetFieldOfViewOnShowAction(bool);
+
+  /// Toggle flag determining whether orientation slice views should be reset to background volume axis
+  /// closest to the view's default view axis when showing a volume in subject hierarchy.
+  /// By default it is on. State is stored in the application settings.
+  void toggleResetViewOrientationOnShowAction(bool);
 
 protected:
   QScopedPointer<qSlicerSubjectHierarchyVolumesPluginPrivate> d_ptr;

@@ -23,28 +23,43 @@
 
 #include "qSlicerWidget.h"
 
+// Slicer includes
+#include <qSlicerApplication.h>
+
+// MRML includes
+#include <vtkSlicerApplicationLogic.h>
+
 // VTK includes
 
 //-----------------------------------------------------------------------------
 class qSlicerWidgetPrivate
 {
+  Q_DECLARE_PUBLIC(qSlicerWidget);
+protected:
+  qSlicerWidget* const q_ptr;
+
 public:
+  qSlicerWidgetPrivate(qSlicerWidget& object);
+
   QPointer<QWidget>                          ParentContainer;
 };
 
 //-----------------------------------------------------------------------------
+qSlicerWidgetPrivate::qSlicerWidgetPrivate(qSlicerWidget& object)
+  : q_ptr(&object)
+{
+}
+
+//-----------------------------------------------------------------------------
 qSlicerWidget::qSlicerWidget(QWidget * _parent, Qt::WindowFlags f)
   :QWidget(_parent, f)
-  , d_ptr(new qSlicerWidgetPrivate)
+  , d_ptr(new qSlicerWidgetPrivate(*this))
 {
 }
 
 //-----------------------------------------------------------------------------
 qSlicerWidget::~qSlicerWidget() = default;
 
-//-----------------------------------------------------------------------------
-//CTK_SET_CPP(qSlicerWidget, vtkSlicerApplicationLogic*, setAppLogic, AppLogic);
-//CTK_GET_CPP(qSlicerWidget, vtkSlicerApplicationLogic*, appLogic, AppLogic);
 //-----------------------------------------------------------------------------
 
 void qSlicerWidget::setMRMLScene(vtkMRMLScene* scene)
@@ -55,4 +70,27 @@ void qSlicerWidget::setMRMLScene(vtkMRMLScene* scene)
     {
     emit mrmlSceneChanged(scene);
     }
+}
+
+//-----------------------------------------------------------------------------
+vtkSlicerApplicationLogic* qSlicerWidget::appLogic()const
+{
+  Q_D(const qSlicerWidget);
+  if (!qSlicerApplication::application())
+    {
+    return nullptr;
+    }
+  return qSlicerApplication::application()->applicationLogic();
+}
+
+//-----------------------------------------------------------------------------
+vtkMRMLAbstractLogic* qSlicerWidget::moduleLogic(const QString& moduleName)const
+{
+  Q_D(const qSlicerWidget);
+  vtkSlicerApplicationLogic* applicationLogic = this->appLogic();
+  if (!applicationLogic)
+    {
+    return nullptr;
+    }
+  return applicationLogic->GetModuleLogic(moduleName.toUtf8());
 }

@@ -19,6 +19,7 @@
 ==============================================================================*/
 
 // Qt includes
+#include <QCloseEvent>
 #include <QPushButton>
 
 // QtGUI includes
@@ -70,6 +71,7 @@ void qSlicerExtensionsManagerDialogPrivate::init()
   // only if it applies. Note also that keep track of "EnvironmentVariables/PYTHONPATH'
   // isn't required, "Modules/AdditionalPaths" is enough to know if we should restart.
   QSettings * settings = qSlicerCoreApplication::application()->revisionUserSettings();
+    // this->PreviousModulesAdditionalPaths contain the raw (relative or absolute) paths, not converted to absolute
   this->PreviousModulesAdditionalPaths = settings->value("Modules/AdditionalPaths").toStringList();
   this->PreviousExtensionsScheduledForUninstall = settings->value("Extensions/ScheduledForUninstall").toStringList();
   this->PreviousExtensionsScheduledForUpdate = settings->value("Extensions/ScheduledForUpdate").toMap();
@@ -164,6 +166,7 @@ void qSlicerExtensionsManagerDialog::onModelUpdated()
   Q_ASSERT(this->extensionsManagerModel());
   bool shouldRestart = false;
   qSlicerCoreApplication * coreApp = qSlicerCoreApplication::application();
+  // this->PreviousModulesAdditionalPaths contain the raw (relative or absolute) paths, not converted to absolute
   if (d->PreviousModulesAdditionalPaths
       != coreApp->revisionUserSettings()->value("Modules/AdditionalPaths").toStringList() ||
       d->PreviousExtensionsScheduledForUninstall
@@ -174,4 +177,38 @@ void qSlicerExtensionsManagerDialog::onModelUpdated()
     shouldRestart = true;
     }
   this->setRestartRequested(shouldRestart);
+}
+
+// --------------------------------------------------------------------------
+void qSlicerExtensionsManagerDialog::closeEvent(QCloseEvent* event)
+{
+  Q_D(qSlicerExtensionsManagerDialog);
+  if (d->ExtensionsManagerWidget->confirmClose())
+    {
+    event->accept(); // close window
+    }
+  else
+    {
+    event->ignore(); // ignore close event
+    }
+}
+
+//-----------------------------------------------------------------------------
+void qSlicerExtensionsManagerDialog::accept()
+{
+  Q_D(qSlicerExtensionsManagerDialog);
+  if (d->ExtensionsManagerWidget->confirmClose())
+    {
+    Superclass::accept(); // close window
+    }
+}
+
+//-----------------------------------------------------------------------------
+void qSlicerExtensionsManagerDialog::reject()
+{
+  Q_D(qSlicerExtensionsManagerDialog);
+  if (d->ExtensionsManagerWidget->confirmClose())
+    {
+    Superclass::reject(); // close window
+    }
 }

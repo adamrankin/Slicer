@@ -263,35 +263,18 @@ void vtkSlicerApplicationLogic::TerminateProcessingThread()
 
 //----------------------------------------------------------------------------
 itk::ITK_THREAD_RETURN_TYPE
-vtkSlicerApplicationLogic
-::ProcessingThreaderCallback( void *arg )
+vtkSlicerApplicationLogic::ProcessingThreaderCallback(void* arg)
 {
+  vtkSlicerApplicationLogic* appLogic = (vtkSlicerApplicationLogic*)(((itk::PlatformMultiThreader::WorkUnitInfo*)(arg))->UserData);
+  if (!appLogic)
+    {
+    vtkGenericWarningMacro("vtkSlicerApplicationLogic::ProcessingThreaderCallback failed: invalid appLogic");
+    return itk::ITK_THREAD_RETURN_DEFAULT_VALUE;
+    }
 
-#ifdef ITK_USE_WIN32_THREADS
-  // Adjust the priority of this thread
-  SetThreadPriority(GetCurrentThread(),
-                    THREAD_PRIORITY_BELOW_NORMAL);
-#endif
+  appLogic->SetCurrentThreadPriorityToBackground();
 
-#ifdef ITK_USE_PTHREADS
-  // Adjust the priority of all PROCESS level threads.  Not a perfect solution.
-  int which = PRIO_PROCESS;
-  id_t pid;
-  int priority = 20;
-  int ret;
-
-  pid = getpid();
-  ret = setpriority(which, pid, priority);
-  (void)ret; // unused variable
-#endif
-
-  // pull out the reference to the appLogic
-  vtkSlicerApplicationLogic *appLogic
-    = (vtkSlicerApplicationLogic*)
-    (((itk::PlatformMultiThreader::WorkUnitInfo *)(arg))->UserData);
-
-  // Tell the app to start processing any tasks slated for the
-  // processing thread
+  // Start background processing tasks in this thread
   appLogic->ProcessProcessingTasks();
 
   return itk::ITK_THREAD_RETURN_DEFAULT_VALUE;
@@ -345,35 +328,18 @@ void vtkSlicerApplicationLogic::ProcessProcessingTasks()
 }
 
 itk::ITK_THREAD_RETURN_TYPE
-vtkSlicerApplicationLogic
-::NetworkingThreaderCallback( void *arg )
+vtkSlicerApplicationLogic::NetworkingThreaderCallback(void* arg)
 {
+  vtkSlicerApplicationLogic* appLogic = (vtkSlicerApplicationLogic*)(((itk::PlatformMultiThreader::WorkUnitInfo*)(arg))->UserData);
+  if (!appLogic)
+    {
+    vtkGenericWarningMacro("vtkSlicerApplicationLogic::NetworkingThreaderCallback failed: invalid appLogic");
+    return itk::ITK_THREAD_RETURN_DEFAULT_VALUE;
+    }
 
-#ifdef ITK_USE_WIN32_THREADS
-  // Adjust the priority of this thread
-  SetThreadPriority(GetCurrentThread(),
-                    THREAD_PRIORITY_BELOW_NORMAL);
-#endif
+  appLogic->SetCurrentThreadPriorityToBackground();
 
-#ifdef ITK_USE_PTHREADS
-  // Adjust the priority of all PROCESS level threads.  Not a perfect solution.
-  int which = PRIO_PROCESS;
-  id_t pid;
-  int priority = 20;
-  int ret;
-
-  pid = getpid();
-  ret = setpriority(which, pid, priority);
-  (void)ret; // unused variable
-#endif
-
-  // pull out the reference to the appLogic
-  vtkSlicerApplicationLogic *appLogic
-    = (vtkSlicerApplicationLogic*)
-    (((itk::PlatformMultiThreader::WorkUnitInfo *)(arg))->UserData);
-
-  // Tell the app to start processing any tasks slated for the
-  // processing thread
+  // Start network communication tasks in this thread
   appLogic->ProcessNetworkingTasks();
 
   return itk::ITK_THREAD_RETURN_DEFAULT_VALUE;
@@ -631,7 +597,19 @@ void vtkSlicerApplicationLogic::ProcessModified()
   //  - decrement reference count that was increased when it was added to the queue
   if (obj.GetPointer())
     {
-    obj->Modified();
+    vtkMRMLNode* node = vtkMRMLNode::SafeDownCast(obj);
+    if (node)
+      {
+      // use Start/EndModify to also invoke all pending events that might have been
+      // accumulated because of previous use of SetDisableModifiedEvent (e.g., in itkMRMLIDImageIO).
+      bool wasModified = node->StartModify();
+      node->Modified();
+      node->EndModify(wasModified);
+      }
+    else
+      {
+      obj->Modified();
+      }
     obj->Delete();
     obj = nullptr;
     }
@@ -730,18 +708,30 @@ bool vtkSlicerApplicationLogic::IsEmbeddedModule(const std::string& filePath,
 {
   if (filePath.empty())
     {
-    vtkGenericWarningMacro( << "filePath is an empty string !");
+    vtkGenericWarningMacro("vtkSlicerApplicationLogic::IsEmbeddedModule failed: filePath argument is empty");
     return false;
     }
   if (applicationHomeDir.empty())
     {
-    vtkGenericWarningMacro( << "applicationHomeDir is an empty string !");
+    vtkGenericWarningMacro("vtkSlicerApplicationLogic::IsEmbeddedModule failed: applicationHomeDir argument is empty");
     return false;
     }
   std::string extensionPath = itksys::SystemTools::GetFilenamePath(filePath);
   bool isEmbedded = itksys::SystemTools::StringStartsWith(extensionPath.c_str(), applicationHomeDir.c_str());
 #ifdef Slicer_BUILD_EXTENSIONMANAGER_SUPPORT
-  // On MacOSX extensions are installed in the "<Slicer_EXTENSIONS_DIRBASENAME>-<slicerRevision>"
+  // If settings are stored in application home directory then extensions are installed within the home directory
+  // in <applicationHomeDir>/<Slicer_ORGANIZATION_NAME/DOMAIN>/<Slicer_EXTENSIONS_DIRBASENAME>-<slicerRevision>.
+  // Therefore we consider the module not embedded it it is within <Slicer_EXTENSIONS_DIRBASENAME>-<slicerRevision> folder.
+  // It would be even more robust if we checked <organization>/<Slicer_EXTENSIONS_DIRBASENAME>-<slicerRevision>
+  // subfolder, but getting organization folder name from Slicer_ORGANIZATION_NAME/Slicer_ORGANIZATION_DOMAIN values is not a trivial,
+  // so for now we do not check the organization.
+#ifdef Slicer_STORE_SETTINGS_IN_APPLICATION_HOME_DIR
+  if (isEmbedded && extensionPath.find(Slicer_EXTENSIONS_DIRBASENAME "-" + slicerRevision) != std::string::npos)
+    {
+    isEmbedded = false;
+    }
+#endif
+  // On macOS extensions are installed in the "<Slicer_EXTENSIONS_DIRBASENAME>-<slicerRevision>"
   // folder being a sub directory of the application dir, an extra test is required to make sure the
   // tested filePath doesn't belong to that "<Slicer_EXTENSIONS_DIRBASENAME>-<slicerRevision>" folder.
   // BUG 2848: Since package name can be rename from "Slicer.app" to "Something.app", let's compare
@@ -762,12 +752,12 @@ bool vtkSlicerApplicationLogic::IsPluginInstalled(const std::string& filePath,
 {
   if (filePath.empty())
     {
-    vtkGenericWarningMacro( << "filePath is an empty string !");
+    vtkGenericWarningMacro("vtkSlicerApplicationLogic::IsPluginInstalled failed: filePath argument is empty");
     return false;
     }
   if (applicationHomeDir.empty())
     {
-    vtkGenericWarningMacro( << "applicationHomeDir is an empty string !");
+    vtkGenericWarningMacro("vtkSlicerApplicationLogic::IsPluginInstalled failed: applicationHomeDir argument is empty");
     return false;
     }
 
@@ -803,12 +793,12 @@ bool vtkSlicerApplicationLogic::IsPluginBuiltIn(const std::string& filePath,
 {
   if (filePath.empty())
     {
-    vtkGenericWarningMacro( << "filePath is an empty string !");
+    vtkGenericWarningMacro("vtkSlicerApplicationLogic::IsPluginBuiltIn failed: filePath argument is empty");
     return false;
     }
   if (applicationHomeDir.empty())
     {
-    vtkGenericWarningMacro( << "applicationHomeDir is an empty string !");
+    vtkGenericWarningMacro("vtkSlicerApplicationLogic::IsPluginBuiltIn failed: applicationHomeDir argument is empty");
     return false;
     }
 
@@ -822,7 +812,7 @@ bool vtkSlicerApplicationLogic::IsPluginBuiltIn(const std::string& filePath,
         canonicalPath.c_str(), canonicalApplicationHomeDir.c_str());
 
 #ifdef Slicer_BUILD_EXTENSIONMANAGER_SUPPORT
-  // On MacOSX extensions are installed in the "<Slicer_EXTENSIONS_DIRBASENAME>-<slicerRevision>"
+  // On macOS extensions are installed in the "<Slicer_EXTENSIONS_DIRBASENAME>-<slicerRevision>"
   // folder being a sub directory of the application dir, an extra test is required to make sure the
   // tested filePath doesn't belong to that "<Slicer_EXTENSIONS_DIRBASENAME>-<slicerRevision>" folder.
   // Since package name can be rename from "Slicer.app" to "Something.app", let's compare
@@ -844,7 +834,7 @@ std::string GetModuleHomeDirectory(const std::string& filePath,
 {
   if (filePath.empty())
     {
-    vtkGenericWarningMacro( << "filePath is an empty string !");
+    vtkGenericWarningMacro("GetModuleHomeDirectory failed: filePath argument is empty");
     return std::string();
     }
 
@@ -866,7 +856,7 @@ std::string GetModuleHomeDirectory(const std::string& filePath,
   if (components.size() < 5)
     {
     // At least 5 components are expected to be able to compute the module home directory
-    vtkGenericWarningMacro( << "Failed to compute module home directory given filePath: " << filePath);
+    vtkGenericWarningMacro("GetModuleHomeDirectory: failed to compute module home directory given filePath: " << filePath);
     return std::string();
     }
 
@@ -899,12 +889,12 @@ std::string vtkSlicerApplicationLogic::GetModuleShareDirectory(const std::string
 {
   if (moduleName.empty())
     {
-    vtkGenericWarningMacro( << "moduleName is an empty string !");
+    vtkGenericWarningMacro("vtkSlicerApplicationLogic::GetModuleShareDirectory failed: moduleName argument is empty");
     return std::string();
     }
   if (filePath.empty())
     {
-    vtkGenericWarningMacro( << "filePath is an empty string !");
+    vtkGenericWarningMacro("vtkSlicerApplicationLogic::GetModuleShareDirectory failed: filePath argument is empty");
     return std::string();
     }
 
@@ -933,7 +923,7 @@ std::string vtkSlicerApplicationLogic::GetModuleSlicerXYShareDirectory(const std
 {
   if (filePath.empty())
     {
-    vtkGenericWarningMacro( << "filePath is an empty string !");
+    vtkGenericWarningMacro("vtkSlicerApplicationLogic::GetModuleSlicerXYShareDirectory failed: filePath argument is empty");
     return std::string();
     }
   std::string slicerSubDir;
@@ -956,7 +946,7 @@ std::string vtkSlicerApplicationLogic::GetModuleSlicerXYLibDirectory(const std::
 {
   if (filePath.empty())
     {
-    vtkGenericWarningMacro( << "filePath is an empty string !");
+    vtkGenericWarningMacro("vtkSlicerApplicationLogic::GetModuleSlicerXYLibDirectory failed: filePath argument is empty");
     return std::string();
     }
   std::string slicerSubDir;
@@ -972,4 +962,61 @@ std::string vtkSlicerApplicationLogic::GetModuleSlicerXYLibDirectory(const std::
 vtkPersonInformation* vtkSlicerApplicationLogic::GetUserInformation()
 {
   return this->UserInformation;
+}
+
+//----------------------------------------------------------------------------
+void vtkSlicerApplicationLogic::SetCurrentThreadPriorityToBackground()
+{
+  int processingThreadPriority = 0;
+  bool isPriorityEnvSet = false;
+  const char* slicerProcThreadPrio = itksys::SystemTools::GetEnv("SLICER_BACKGROUND_THREAD_PRIORITY");
+  if (slicerProcThreadPrio)
+    {
+    const std::string priorityStr = slicerProcThreadPrio;
+    try
+      {
+      processingThreadPriority = std::stoi(priorityStr);
+      isPriorityEnvSet = true;
+      }
+    catch(...)
+      {
+      vtkWarningMacro("vtkSlicerApplicationLogic::SetCurrentThreadPriorityToBackground failed: " \
+        "Invalid SLICER_BACKGROUND_THREAD_PRIORITY value (" << priorityStr << "), expected an integer");
+      }
+    }
+
+#ifdef ITK_USE_WIN32_THREADS
+  // Adjust the priority of this thread
+  bool ret = SetThreadPriority(GetCurrentThread(), isPriorityEnvSet ? processingThreadPriority : THREAD_PRIORITY_BELOW_NORMAL);
+  if (!ret)
+    {
+    vtkWarningMacro("vtkSlicerApplicationLogic::SetCurrentThreadPriorityToBackground failed: setThreadPriority did not succeed.");
+    }
+#endif
+
+#ifdef ITK_USE_PTHREADS
+  // Adjust the priority of all PROCESS level threads.  Not a perfect solution.
+  int which = PRIO_PROCESS;
+  int priority = isPriorityEnvSet ? processingThreadPriority : 20;
+  id_t pid = getpid();
+  int ret = setpriority(which, pid, priority);
+  if (ret != 0)
+    {
+    vtkWarningMacro("vtkSlicerApplicationLogic::SetCurrentThreadPriorityToBackground failed: " \
+      "setpriority did not succeed. You need root privileges to set a priority < 0.");
+    }
+#endif
+}
+
+//----------------------------------------------------------------------------
+void vtkSlicerApplicationLogic::RequestModifiedCallback(vtkObject* caller, unsigned long eid, void* clientData, void* callData)
+{
+  // Note: This method may be called from any thread
+  if (clientData == nullptr || callData == nullptr)
+    {
+    return;
+    }
+  vtkSlicerApplicationLogic* appLogic = static_cast<vtkSlicerApplicationLogic*>(clientData);
+  vtkObject* modifiedObject = static_cast<vtkObject*>(callData);
+  appLogic->RequestModified(modifiedObject);
 }

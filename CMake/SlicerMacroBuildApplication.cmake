@@ -433,6 +433,7 @@ macro(slicerMacroBuildApplication)
       PROPERTIES
         MACOSX_BUNDLE_BUNDLE_NAME "${SLICERAPP_APPLICATION_NAME} ${Slicer_MAIN_PROJECT_VERSION_FULL}"
         MACOSX_BUNDLE_BUNDLE_VERSION "${Slicer_MAIN_PROJECT_VERSION_FULL}"
+        MACOSX_BUNDLE_GUI_IDENTIFIER "${Slicer_MACOSX_BUNDLE_GUI_IDENTIFIER}"
         MACOSX_BUNDLE_INFO_PLIST "${Slicer_CMAKE_DIR}/MacOSXBundleInfo.plist.in"
         LINK_FLAGS ${link_flags}
       )
@@ -695,7 +696,7 @@ macro(slicerMacroBuildApplication)
       endif()
 
       #
-      # On MacOSX, the installed launcher settings are *only* read directly by the
+      # On macOS, the installed launcher settings are *only* read directly by the
       # qSlicerCoreApplication using the LauncherLib.
       #
       # On Linux and Windows, the installed launcher settings are first read by the

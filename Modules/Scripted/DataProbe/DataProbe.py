@@ -250,8 +250,11 @@ class DataProbeInfoWidget(object):
     # collect information from displayable managers
     displayableManagerCollection = vtk.vtkCollection()
     if sliceNode:
-      sliceView = slicer.app.layoutManager().sliceWidget(sliceNode.GetName()).sliceView()
-      sliceView.getDisplayableManagers(displayableManagerCollection)
+      sliceWidget = slicer.app.layoutManager().sliceWidget(sliceNode.GetName())
+      if sliceWidget:
+        # sliceWidget is owned by the layout manager
+        sliceView = sliceWidget.sliceView()
+        sliceView.getDisplayableManagers(displayableManagerCollection)
     aggregatedDisplayableManagerInfo = ''
     for index in range(displayableManagerCollection.GetNumberOfItems()):
       displayableManager = displayableManagerCollection.GetItemAsObject(index)
@@ -409,11 +412,10 @@ class DataProbeInfoWidget(object):
     self.viewerFrame.setLayout(qt.QHBoxLayout())
     self.frame.layout().addWidget(self.viewerFrame)
     self.viewerColor = qt.QLabel(self.viewerFrame)
+    self.viewerColor.setSizePolicy(qt.QSizePolicy.Fixed, qt.QSizePolicy.Preferred)
     self.viewerFrame.layout().addWidget(self.viewerColor)
     self.viewInfo = qt.QLabel()
     self.viewerFrame.layout().addWidget(self.viewInfo)
-
-    self.viewerFrame.layout().addStretch(1)
 
     def _setFixedFontFamily(widget, family=None):
       if family is None:
@@ -421,7 +423,7 @@ class DataProbeInfoWidget(object):
       font = widget.font
       font.setFamily(family)
       widget.font = font
-
+      widget.wordWrap = True
     _setFixedFontFamily(self.viewInfo)
 
     # the grid - things about the layers

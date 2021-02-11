@@ -20,9 +20,11 @@
 
 // Qt includes
 #include <QDebug>
+#include <QDropEvent>
 #include <QEvent>
 #include <QFileInfo>
 #include <QHBoxLayout>
+#include <QMimeData>
 #include <QToolButton>
 
 // CTK includes
@@ -31,6 +33,7 @@
 // qMRML includes
 #include "qMRMLColors.h"
 #include "qMRMLThreeDView_p.h"
+#include "qMRMLUtils.h"
 
 // MRMLDisplayableManager includes
 #include <vtkMRMLAbstractDisplayableManager.h>
@@ -44,6 +47,7 @@
 #include <vtkMRMLScene.h>
 #include <vtkMRMLCameraNode.h>
 #include <vtkMRMLCrosshairNode.h>
+#include <vtkMRMLSubjectHierarchyNode.h>
 
 // VTK includes
 #include <vtkCallbackCommand.h>
@@ -52,6 +56,7 @@
 #include <vtkRenderer.h>
 #include <vtkRenderWindowInteractor.h>
 #include <vtkSmartPointer.h>
+#include <vtkVersionMacros.h>
 
 //--------------------------------------------------------------------------
 // qMRMLThreeDViewPrivate methods
@@ -156,30 +161,6 @@ void qMRMLThreeDViewPrivate::setMRMLScene(vtkMRMLScene* newScene)
     this->MRMLScene != nullptr && !this->MRMLScene->IsBatchProcessing());
 }
 
-//---------------------------------------------------------------------------
-//vtkMRMLCameraNode* qMRMLThreeDViewPrivate::lookUpMRMLCameraNode(vtkMRMLViewNode* viewNode)
-//{
-//  Q_ASSERT(viewNode);
-//
-//  QString viewNodeID(viewNode->GetID());
-//  Q_ASSERT(!viewNodeID.isEmpty());
-//
-//  std::vector<vtkMRMLNode*> cameraNodes;
-//  int cameraNodeCount = this->MRMLScene->GetNodesByClass("vtkMRMLCameraNode", cameraNodes);
-//  for (int n=0; n < cameraNodeCount; n++)
-//    {
-//    vtkMRMLCameraNode* cameraNode = vtkMRMLCameraNode::SafeDownCast(cameraNodes[n]);
-//    Q_ASSERT(cameraNode);
-//    QString activeTag(cameraNode->GetActiveTag());
-//    if (activeTag == viewNodeID)
-//      {
-//      Q_ASSERT(this->MRMLScene->GetNodeByID(cameraNode->GetID()));
-//      return cameraNode;
-//      }
-//    }
-//  return 0;
-//}
-
 // --------------------------------------------------------------------------
 void qMRMLThreeDViewPrivate::onSceneStartProcessing()
 {
@@ -280,6 +261,7 @@ qMRMLThreeDView::qMRMLThreeDView(QWidget* _parent) : Superclass(_parent)
 {
   Q_D(qMRMLThreeDView);
   d->init();
+  setAcceptDrops(true);
 
   vtkRenderWindowInteractor* renderWindowInteractor = this->interactor();
 
@@ -305,6 +287,18 @@ void qMRMLThreeDView::addDisplayableManager(const QString& displayableManagerNam
     vtkMRMLDisplayableManagerGroup::InstantiateDisplayableManager(
       displayableManagerName.toUtf8()));
   d->DisplayableManagerGroup->AddDisplayableManager(displayableManager);
+}
+
+//------------------------------------------------------------------------------
+vtkMRMLCameraNode* qMRMLThreeDView::cameraNode()
+{
+  vtkMRMLThreeDViewInteractorStyle* style = vtkMRMLThreeDViewInteractorStyle::SafeDownCast(this->interactorStyle());
+  if (!style)
+    {
+    return nullptr;
+    }
+  vtkMRMLCameraNode* cam = style->GetCameraNode();
+  return cam;
 }
 
 //------------------------------------------------------------------------------
@@ -534,35 +528,74 @@ vtkMRMLAbstractDisplayableManager* qMRMLThreeDView::displayableManagerByClassNam
 void qMRMLThreeDView::setViewCursor(const QCursor &cursor)
 {
   this->setCursor(cursor);
-#if VTK_MAJOR_VERSION >= 9 || (VTK_MAJOR_VERSION >= 8 && VTK_MINOR_VERSION >= 2)
   if (this->VTKWidget() != nullptr)
-   {
-    this->VTKWidget()->setQVTKCursor(cursor);
-    }
+    {
+#if VTK_MAJOR_VERSION >= 9 || (VTK_MAJOR_VERSION >= 8 && VTK_MINOR_VERSION > 2)
+    this->VTKWidget()->setCursor(cursor);  // TODO: test if cursor settings works
+#elif (VTK_MAJOR_VERSION == 8 && VTK_MINOR_VERSION == 2)
+    this->VTKWidget()->setQVTKCursor(cursor);  // TODO: test if cursor settings works
 #endif
+    }
 }
 
 // --------------------------------------------------------------------------
 void qMRMLThreeDView::unsetViewCursor()
 {
   this->unsetCursor();
-#if VTK_MAJOR_VERSION >= 9 || (VTK_MAJOR_VERSION >= 8 && VTK_MINOR_VERSION >= 2)
   if (this->VTKWidget() != nullptr)
     {
     // TODO: it would be better to restore default cursor, but QVTKOpenGLNativeWidget
     // API does not have an accessor method to the default cursor.
-    this->VTKWidget()->setQVTKCursor(QCursor(Qt::ArrowCursor));
-    }
+#if VTK_MAJOR_VERSION >= 9 || (VTK_MAJOR_VERSION >= 8 && VTK_MINOR_VERSION > 2)
+    this->VTKWidget()->setCursor(QCursor(Qt::ArrowCursor));  // TODO: test if cursor settings works
+#elif (VTK_MAJOR_VERSION == 8 && VTK_MINOR_VERSION == 2)
+    this->VTKWidget()->setQVTKCursor(QCursor(Qt::ArrowCursor));  // TODO: test if cursor settings works
 #endif
+    }
 }
 
 // --------------------------------------------------------------------------
 void qMRMLThreeDView::setDefaultViewCursor(const QCursor &cursor)
 {
-#if VTK_MAJOR_VERSION >= 9 || (VTK_MAJOR_VERSION >= 8 && VTK_MINOR_VERSION >= 2)
   if (this->VTKWidget() != nullptr)
     {
-    this->VTKWidget()->setDefaultQVTKCursor(cursor);
-    }
+#if VTK_MAJOR_VERSION >= 9 || (VTK_MAJOR_VERSION >= 8 && VTK_MINOR_VERSION > 2)
+    this->VTKWidget()->setDefaultCursor(cursor);  // TODO: test if cursor settings works
+#elif (VTK_MAJOR_VERSION == 8 && VTK_MINOR_VERSION == 2)
+    this->VTKWidget()->setDefaultQVTKCursor(cursor);  // TODO: test if cursor settings works
 #endif
+    }
+}
+
+//---------------------------------------------------------------------------
+void qMRMLThreeDView::dragEnterEvent(QDragEnterEvent* event)
+{
+  Q_D(qMRMLThreeDView);
+  vtkNew<vtkIdList> shItemIdList;
+  qMRMLUtils::mimeDataToSubjectHierarchyItemIDs(event->mimeData(), shItemIdList);
+  if (shItemIdList->GetNumberOfIds() > 0)
+    {
+    event->accept();
+    return;
+    }
+  Superclass::dragEnterEvent(event);
+}
+
+//-----------------------------------------------------------------------------
+void qMRMLThreeDView::dropEvent(QDropEvent* event)
+{
+  Q_D(qMRMLThreeDView);
+  vtkNew<vtkIdList> shItemIdList;
+  qMRMLUtils::mimeDataToSubjectHierarchyItemIDs(event->mimeData(), shItemIdList);
+  if (!shItemIdList->GetNumberOfIds())
+    {
+    return;
+    }
+  vtkMRMLSubjectHierarchyNode* shNode = vtkMRMLSubjectHierarchyNode::GetSubjectHierarchyNode(d->MRMLScene);
+  if (!shNode)
+    {
+    qWarning() << Q_FUNC_INFO << " failed: invalid subject hierarchy node";
+    return;
+    }
+  shNode->ShowItemsInView(shItemIdList, this->mrmlViewNode());
 }

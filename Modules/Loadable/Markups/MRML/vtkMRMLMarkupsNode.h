@@ -38,7 +38,7 @@ class vtkMRMLUnitNode;
 /// MarkupsNodes contains a list of points (ControlPoint).
 /// Each markupNode is defined by a certain number of control points:
 /// N for fiducials, 2 for rulers, 3 for angles and N for curves.
-/// MarkupNodes are stricly connected with the VTKWidget representations. For each
+/// MarkupNodes are strictly connected with the VTKWidget representations. For each
 /// MarkupNode there is a representation in each view. The representations are handled
 /// by the VTKWidget (there is one widget for each MRMLMarkupsNode per view).
 /// Visualization parameters for these nodes are controlled by the
@@ -59,6 +59,8 @@ class vtkMRMLUnitNode;
 /// \ingroup Slicer_QtModules_Markups
 
 class vtkAlgorithmOutput;
+class vtkCollection;
+class vtkDataArray;
 class vtkGeneralTransform;
 class vtkMatrix4x4;
 class vtkMRMLMarkupsDisplayNode;
@@ -170,17 +172,32 @@ public:
 
   //@{
   /**
-   * Get/set measurement data, such as length, angle, diameter, cross-section area.
+   * Get measurement data, such as length, angle, diameter, cross-section area.
+   * Add/remove/clear measurements.
    */
   int GetNumberOfMeasurements();
+  int GetNumberOfEnabledMeasurements();
   vtkMRMLMeasurement* GetNthMeasurement(int id);
+  vtkMRMLMeasurement* GetMeasurement(const char* name);
   void AddMeasurement(vtkMRMLMeasurement* measurement);
+  void RemoveNthMeasurement(int id);
+  void ClearValueForAllMeasurements();
+  //@}
+  //@{
+  /**
+   * Set measurement data, such as length, angle, diameter, cross-section area.
+   *
+   * IMPORTANT: These functions should not be used any more. Setting measurements now
+   * happens in the \sa UpdateMeasurementsInternal functions by calling Compute on the
+   * measurements. Similarly, RemoveAllMeasurements should not be called to clear the values,
+   * because the measurements are not set externally but added internally in the constructors
+   * and only updated (Compute called) as needed.
+   */
   void SetNthMeasurement(int id, vtkMRMLMeasurement* measurement);
   void SetNthMeasurement(int id, const std::string& name, double value, const std::string &units,
     std::string printFormat = "", const std::string description = "",
     vtkCodedEntry* quantityCode = nullptr, vtkCodedEntry* derivationCode = nullptr,
     vtkCodedEntry* unitsCode = nullptr, vtkCodedEntry* methodCode = nullptr);
-  void RemoveNthMeasurement(int id);
   void RemoveAllMeasurements();
   //@}
 
@@ -191,7 +208,7 @@ public:
   /// - PointRemovedEvent: control point(s) deleted. Modified event is NOT invoked.
   /// - PointModifiedEvent: existing control point(s) modified, added, or removed. Modified event is NOT invoked.
   /// - PointStartInteractionEvent when starting interacting with a control point.
-  /// - PointEndInteractionEvent when an interaction eith a control point process finishes.
+  /// - PointEndInteractionEvent when an interaction with a control point process finishes.
   /// - CenterPointModifiedEvent when position of the centerpoint is changed (displayed for example for closed curves)
   ///
   /// Event data for Point* events: Event callData is control point index address (int*). If the pointer is nullptr
@@ -254,7 +271,7 @@ public:
   /// Return true if n is a valid control point, false otherwise.
   bool ControlPointExists(int n);
 
-  /// Depreceated. Use ControlPointExists instead.
+  /// Deprecated. Use ControlPointExists instead.
   bool MarkupExists(int n) { return this->ControlPointExists(n); }
   /// Return the number of control points that are stored in this node
   int GetNumberOfControlPoints();
@@ -270,7 +287,7 @@ public:
   std::vector<ControlPoint*>* GetControlPoints();
   /// Add n control points.
   /// If point is specified then all control point positions will be initialized to that position,
-  /// otherwise control poin positions are initialized to (0,0,0).
+  /// otherwise control point positions are initialized to (0,0,0).
   /// If requested number of points would result more points than the maximum allowed number of points
   /// then no points are added at all.
   /// Return index of the last placed control point, -1 on failure.
@@ -307,6 +324,12 @@ public:
 
   /// Get control point position status (PositionUndefined, PositionPreview, PositionDefined)
   int GetNthControlPointPositionStatus(int pointIndex);
+
+  /// Get index of N-th control point of the specified status.
+  /// (for example, get index of N-th placed control point).
+  /// pointIndex is zero-based, so to get index of the first control point, use pointIndex=0.
+  /// Return -1 if no such control point is found.
+  int GetNthControlPointIndexByPositionStatus(int pointIndex, int positionStatus);
 
   /// Set control point status to undefined.
   void UnsetNthControlPointPosition(int pointIndex);
@@ -488,7 +511,7 @@ public:
   /// Get the markup node label format string that defines the markup names.
   /// \sa SetMarkupLabelFormat
   std::string GetMarkupLabelFormat();
-  /// Set the markup node label format strign that defines the markup names,
+  /// Set the markup node label format string that defines the markup names,
   /// then invoke the LabelFormatModifedEvent
   /// In standard printf notation, with the addition of %N being replaced
   /// by the list name.
@@ -578,6 +601,13 @@ public:
 
   virtual std::string GetPropertiesLabelText();
 
+  /// Utility function to get unit node from scene
+  vtkMRMLUnitNode* GetUnitNode(const char* quantity);
+
+  /// Update the AssignAttribute filter based on its ActiveScalarName and its ActiveAttributeLocation
+  /// To be re-implemented in subclasses
+  virtual void UpdateAssignedAttribute() {};
+
 protected:
   vtkMRMLMarkupsNode();
   ~vtkMRMLMarkupsNode() override;
@@ -585,9 +615,6 @@ protected:
   void operator=(const vtkMRMLMarkupsNode&);
 
   vtkSmartPointer<vtkStringArray> TextList;
-
-  /// Utility function to get unit node from scene
-  vtkMRMLUnitNode* GetUnitNode(const char* quantity);
 
   /// Set label of closest control point.
   /// If one control point is closest to multiple labels then all of them will be assigned to the same control point,
@@ -620,8 +647,8 @@ protected:
   /// Calls UpdateMeasurementsInternal()
   void UpdateMeasurements();
 
-  /// Calculates the updated measurements
-  /// Should be overwritten by child classes to compute measurements
+  /// Calculate the updated measurements.
+  /// May be overridden in subclasses to compute special measurements (for example that apply on the curve polydata).
   virtual void UpdateMeasurementsInternal();
 
   /// Helper function to write measurements to node Description property.
@@ -631,58 +658,64 @@ protected:
   /// Calculates the handle to world matrix based on the current control points
   virtual void UpdateInteractionHandleToWorldMatrix();
 
-  // Used for limiting number of markups that may be placed.
-  int MaximumNumberOfControlPoints;
-  int RequiredNumberOfControlPoints;
+  /// Used for limiting number of control points that may be placed.
+  /// This is a soft limit at which automatic placement stops.
+  int RequiredNumberOfControlPoints{0};
+  /// Used for limiting number of control points that may be placed.
+  /// This is a hard limit at which new control points cannot be added.
+  int MaximumNumberOfControlPoints{0};
 
-  bool CurveClosed;
+  bool CurveClosed{false};
 
-  // Vector of control points
+  /// Vector of control points
   ControlPointsListType ControlPoints;
 
-  // Converts curve control points to curve points.
+  /// Converts curve control points to curve points.
   vtkSmartPointer<vtkCurveGenerator> CurveGenerator;
 
-  // Computes tangent and smooth normal for each curve point.
-  // It provides a fully specified coordinate system at each point of the curve,
-  // which is useful for image reslicing or defining camera pose.
-  // Curve is defined in the world coordinate sytem.
+  /// Computes tangent and smooth normal for each curve point.
+  /// It provides a fully specified coordinate system at each point of the curve,
+  /// which is useful for image reslicing or defining camera pose.
+  /// Curve is defined in the world coordinate system.
   vtkSmartPointer<vtkFrenetSerretFrame> CurveCoordinateSystemGeneratorWorld;
 
-  // Stores control point positions in a polydata (in local coordinate system).
-  // Line cells connect all points into a curve.
+  /// Stores control point positions in a polydata (in local coordinate system).
+  /// Line cells connect all points into a curve.
   vtkSmartPointer<vtkPolyData> CurveInputPoly;
 
   vtkSmartPointer<vtkTransformPolyDataFilter> CurvePolyToWorldTransformer;
   vtkSmartPointer<vtkGeneralTransform> CurvePolyToWorldTransform;
 
-  // Point locator that allows quick finding of interpolated point in the world
-  // coordinate system (in transformed CurvePoly).
+  /// Point locator that allows quick finding of interpolated point in the world
+  /// coordinate system (in transformed CurvePoly).
   vtkSmartPointer<vtkPointLocator> TransformedCurvePolyLocator;
 
-  // Locks all the points and GUI
-  int Locked;
+  /// Locks all the points and GUI
+  int Locked{0};
 
-  std::string MarkupLabelFormat;
+  std::string MarkupLabelFormat{"%N-%d"};
 
-  // Keep track of the number of markups that were added to the list, always
-  // incrementing, not decreasing when they're removed. Used to help create
-  // unique names and ids. Reset to 0 when \sa RemoveAllControlPoints called
-  int LastUsedControlPointNumber;
+  /// Keep track of the number of markups that were added to the list, always
+  /// incrementing, not decreasing when they're removed. Used to help create
+  /// unique names and ids. Reset to 0 when \sa RemoveAllControlPoints called
+  int LastUsedControlPointNumber{0};
 
-  // Markup centerpoint (in local coordinates).
-  // It may be used as rotation center or as a handle to grab the widget by.
+  /// Markup centerpoint (in local coordinates).
+  /// It may be used as rotation center or as a handle to grab the widget by.
   vtkVector3d CenterPos;
 
-  std::vector< vtkSmartPointer<vtkMRMLMeasurement> > Measurements;
+  /// List of measurements stored for the markup
+  vtkCollection* Measurements;
 
   std::string PropertiesLabelText;
 
-  // Transform that moves the xyz unit vectors and origin of the interaction handles to local coordinates
+  /// Transform that moves the xyz unit vectors and origin of the interaction handles to local coordinates
   vtkSmartPointer<vtkMatrix4x4> InteractionHandleToWorldMatrix;
 
   /// Flag set from SetControlPointPositionsWorld that pauses update of measurements until the update is complete.
-  bool IsUpdatingPoints;
+  bool IsUpdatingPoints{false};
+
+  friend class qSlicerMarkupsModuleWidget; // To directly access measurements
 };
 
 #endif

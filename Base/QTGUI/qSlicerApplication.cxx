@@ -22,10 +22,14 @@
 #include <QAction>
 #include <QDebug>
 #include <QFile>
+#include <QLabel>
 #include <QtGlobal>
 #include <QMainWindow>
+#include <QDialog>
+#include <QRandomGenerator>
 #include <QSurfaceFormat>
 #include <QSysInfo>
+#include <QVBoxLayout>
 
 #if defined(Q_OS_WIN32)
   #include <QtPlatformHeaders\QWindowsWindowFunctions> // for setHasBorderInFullScreen
@@ -107,6 +111,10 @@
 
 // VTK includes
 #include <vtkNew.h>
+#include <vtkVersionMacros.h> // must precede reference to VTK_*_VERSION
+#if VTK_MAJOR_VERSION >= 9
+#include <vtkSMP.h> // For VTK_SMP_BACKEND
+#endif
 
 //-----------------------------------------------------------------------------
 class qSlicerApplicationPrivate : public qSlicerCoreApplicationPrivate
@@ -135,6 +143,7 @@ public:
   ctkSettingsDialog*      SettingsDialog;
 #ifdef Slicer_BUILD_EXTENSIONMANAGER_SUPPORT
   qSlicerExtensionsManagerDialog* ExtensionsManagerDialog;
+  bool IsExtensionsManagerDialogOpen;
 #endif
 #ifdef Slicer_USE_QtTesting
   ctkQtTestingUtility*    TestingUtility;
@@ -156,6 +165,7 @@ qSlicerApplicationPrivate::qSlicerApplicationPrivate(
   this->SettingsDialog = nullptr;
 #ifdef Slicer_BUILD_EXTENSIONMANAGER_SUPPORT
   this->ExtensionsManagerDialog = nullptr;
+  this->IsExtensionsManagerDialogOpen = false;
 #endif
 #ifdef Slicer_USE_QtTesting
   this->TestingUtility = nullptr;
@@ -206,6 +216,11 @@ void qSlicerApplicationPrivate::init()
 #ifdef Slicer_USE_PYTHONQT
   if (!qSlicerCoreApplication::testAttribute(qSlicerCoreApplication::AA_DisablePython))
     {
+    // Initialize method prints the welcome message and a prompt, so we need to set these colors now.
+    // All the other colors will be set later in the main window.
+    QPalette palette = qSlicerApplication::application()->palette();
+    q->pythonConsole()->setWelcomeTextColor(palette.color(QPalette::Disabled, QPalette::WindowText));
+    q->pythonConsole()->setPromptColor(palette.color(QPalette::Highlight));
     q->pythonConsole()->initialize(q->pythonManager());
     QStringList autocompletePreferenceList;
     autocompletePreferenceList
@@ -723,6 +738,33 @@ void qSlicerApplication::setHasBorderInFullScreen(bool hasBorder)
 void qSlicerApplication::openExtensionsManagerDialog()
 {
   Q_D(qSlicerApplication);
+  // While the extensions manager is starting up, GUI events may be processed, causing repeated call of this method.
+  // IsExtensionsManagerDialogOpen flag prevents creating multiple extensions manager dialogs.
+  if (d->IsExtensionsManagerDialogOpen)
+    {
+    // already displayed
+    return;
+    }
+  d->IsExtensionsManagerDialogOpen = true;
+
+  // Startup of extensions manager can take tens of seconds.
+  // Display a popup to let the user know.
+  QApplication::setOverrideCursor(QCursor(Qt::BusyCursor));
+  QDialog* startupInProgressDialog = new QDialog(this->mainWindow(), Qt::FramelessWindowHint | Qt::Dialog);
+  QVBoxLayout* layout = new QVBoxLayout();
+  startupInProgressDialog->setLayout(layout);
+  QFrame* frame = new QFrame();
+  frame->setFrameStyle(QFrame::Panel | QFrame::Sunken);
+  layout->addWidget(frame);
+  QVBoxLayout* innerLayout = new QVBoxLayout();
+  frame->setLayout(innerLayout);
+  innerLayout->setMargin(20);
+  QLabel* label = new QLabel();
+  label->setText(tr("Extensions manager is starting, please wait..."));
+  innerLayout->addWidget(label);
+  startupInProgressDialog->show();
+  this->processEvents();
+
   if(!d->ExtensionsManagerDialog)
     {
     d->ExtensionsManagerDialog = new qSlicerExtensionsManagerDialog(nullptr);
@@ -733,12 +775,20 @@ void qSlicerApplication::openExtensionsManagerDialog()
     // The first time the dialog is open, resize it.
     d->ExtensionsManagerDialog->resize(this->mainWindow()->size());
     }
-  d->ExtensionsManagerDialog->setExtensionsManagerModel(
-        this->extensionsManagerModel());
-  if (d->ExtensionsManagerDialog->exec() == QDialog::Accepted)
+  // This call takes most of the startup time
+  d->ExtensionsManagerDialog->setExtensionsManagerModel(this->extensionsManagerModel());
+
+  // Hide the popup window.
+  QApplication::restoreOverrideCursor();
+  startupInProgressDialog->hide();
+  startupInProgressDialog->deleteLater();
+
+  bool accepted = (d->ExtensionsManagerDialog->exec() == QDialog::Accepted);
+  if (accepted)
     {
     this->confirmRestart();
     }
+  d->IsExtensionsManagerDialogOpen = false;
 }
 #endif
 
@@ -777,7 +827,7 @@ QStringList qSlicerApplication::recentLogFiles()
   for (int fileNumber = 0; fileNumber < numberOfFilesToKeep; ++fileNumber)
     {
     QString paddedFileNumber = QString("%1").arg(fileNumber, 3, 10, QChar('0')).toUpper();
-    QString filePath = revisionUserSettings->value(paddedFileNumber, "").toString();
+    QString filePath = qSlicerCoreApplication::application()->toSlicerHomeAbsolutePath(revisionUserSettings->value(paddedFileNumber, "").toString());
     if (!filePath.isEmpty())
       {
       logFilePaths.append(filePath);
@@ -809,10 +859,12 @@ void qSlicerApplication::setupFileLogging()
 
   // Add new log file path for the current session
   QString tempDir = this->temporaryPath();
-  QString currentLogFilePath = tempDir + QString("/") + this->applicationName() + QString("_") +
-    this->revision() + QString("_") +
-    QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss") +
-    QString(".log");
+  QString currentLogFilePath = QString("%1/%2_%3_%4_%5.log")
+    .arg(tempDir)
+    .arg(this->applicationName())
+    .arg(this->revision())
+    .arg(QDateTime::currentDateTime().toString("yyyyMMdd_hhmmss"))
+    .arg(QRandomGenerator::global()->generate() % 1000, 3, 10, QLatin1Char('0'));
   logFilePaths.prepend(currentLogFilePath);
 
   // Save settings
@@ -826,7 +878,7 @@ void qSlicerApplication::setupFileLogging()
     if (fileNumber < numberOfFilesToKeep)
       {
       QString paddedFileNumber = QString("%1").arg(fileNumber, 3, 10, QChar('0')).toUpper();
-      revisionUserSettings->setValue(paddedFileNumber, filePath);
+      revisionUserSettings->setValue(paddedFileNumber, qSlicerCoreApplication::application()->toSlicerHomeRelativePath(filePath));
       }
     // Otherwise delete file
     else
@@ -1056,6 +1108,7 @@ void qSlicerApplication::logApplicationInformation() const
          preferExecutableCli ? "yes" : "no");
 
   // Additional module paths
+  // These paths are not converted to absolute path, because the raw values are moreuseful for troubleshooting.
   QStringList additionalModulePaths =
       this->revisionUserSettings()->value("Modules/AdditionalPaths").toStringList();
 
@@ -1112,7 +1165,12 @@ void qSlicerApplication::resumeRender()
 //-----------------------------------------------------------------------------
 ctkDICOMBrowser* qSlicerApplication::createDICOMBrowserForMainDatabase()
 {
-  return new ctkDICOMBrowser(this->dicomDatabaseShared());
+  ctkDICOMBrowser* browser = new ctkDICOMBrowser(this->dicomDatabaseShared());
+
+  // Allow database directory to be stored with a path relative to slicerHome
+  browser->setDatabaseDirectoryBase(this->slicerHome());
+
+  return browser;
 }
 #endif
 
@@ -1123,7 +1181,13 @@ bool qSlicerApplication::launchDesigner(const QStringList& args/*=QStringList()*
 #ifdef Q_OS_WIN32
   designerExecutable += ".exe";
 #endif
-  return QProcess::startDetached(designerExecutable, args);
+  QProcess process;
+  // Some extensions can modify the startup environment so that designer crashes during startup.
+  // Therefore, we use the startup environment instead of the current environment.
+  process.setProcessEnvironment(this->startupEnvironment());
+  process.setProgram(designerExecutable);
+  process.setArguments(args);
+  return process.startDetached();
 }
 
 

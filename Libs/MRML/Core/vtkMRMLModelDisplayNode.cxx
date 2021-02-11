@@ -23,7 +23,6 @@ Version:   $Revision: 1.3 $
 #include <vtkCommand.h>
 #include <vtkGeometryFilter.h>
 #include <vtkIntArray.h>
-#include <vtkLookupTable.h>
 #include <vtkNew.h>
 #include <vtkObjectFactory.h>
 #include <vtkPassThrough.h>
@@ -52,6 +51,11 @@ vtkMRMLModelDisplayNode::vtkMRMLModelDisplayNode()
   this->ThresholdEnabled = false;
   this->SliceDisplayMode = SliceDisplayIntersection;
   this->BackfaceCulling = 0;
+
+  // Backface color has slightly different hue and less saturated compared to frontface
+  this->BackfaceColorHSVOffset[0] = -0.05;
+  this->BackfaceColorHSVOffset[1] = -0.1;
+  this->BackfaceColorHSVOffset[2] = 0.0;
 
   // the default behavior for models is to use the scalar range of the data
   // to reset the display scalar range, so use the Data flag
@@ -83,6 +87,7 @@ void vtkMRMLModelDisplayNode::PrintSelf(ostream& os, vtkIndent indent)
   vtkMRMLPrintEnumMacro(SliceDisplayMode);
   vtkMRMLPrintBooleanMacro(ThresholdEnabled);
   vtkMRMLPrintVectorMacro(ThresholdRange, double, 2);
+  vtkMRMLPrintVectorMacro(BackfaceColorHSVOffset, double, 3);
   vtkMRMLPrintEndMacro();
 }
 
@@ -96,6 +101,7 @@ void vtkMRMLModelDisplayNode::WriteXML(ostream& of, int nIndent)
   vtkMRMLWriteXMLEnumMacro(sliceDisplayMode, SliceDisplayMode);
   vtkMRMLWriteXMLBooleanMacro(thresholdEnabled, ThresholdEnabled);
   vtkMRMLWriteXMLVectorMacro(thresholdRange, ThresholdRange, double, 2);
+  vtkMRMLWriteXMLVectorMacro(backfaceColorHSVOffset, BackfaceColorHSVOffset, double, 3);
   vtkMRMLWriteXMLEndMacro();
 }
 
@@ -109,6 +115,7 @@ void vtkMRMLModelDisplayNode::ReadXMLAttributes(const char** atts)
   vtkMRMLReadXMLEnumMacro(sliceDisplayMode, SliceDisplayMode);
   vtkMRMLReadXMLBooleanMacro(thresholdEnabled, ThresholdEnabled);
   vtkMRMLReadXMLVectorMacro(thresholdRange, ThresholdRange, double, 2);
+  vtkMRMLReadXMLVectorMacro(backfaceColorHSVOffset, BackfaceColorHSVOffset, double, 3);
   vtkMRMLReadXMLEndMacro();
 
   this->EndModify(disabledModify);
@@ -130,6 +137,7 @@ void vtkMRMLModelDisplayNode::CopyContent(vtkMRMLNode* anode, bool deepCopy/*=tr
   vtkMRMLCopyEnumMacro(SliceDisplayMode);
   vtkMRMLCopyBooleanMacro(ThresholdEnabled);
   vtkMRMLCopyVectorMacro(ThresholdRange, double, 2);
+  vtkMRMLCopyVectorMacro(BackfaceColorHSVOffset, double, 3);
   vtkMRMLCopyEndMacro();
 }
 
@@ -393,36 +401,6 @@ void vtkMRMLModelDisplayNode::SetActiveAttributeLocation(int location)
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLModelDisplayNode::SetActiveScalar(const char *scalarName, int location)
-{
-  if (location == this->ActiveAttributeLocation
-    && ((scalarName && this->ActiveScalarName && !strcmp(scalarName, this->ActiveScalarName))
-        || (scalarName == nullptr && this->ActiveScalarName == nullptr)))
-    {
-    // no change
-    return;
-    }
-  int wasModifying = this->StartModify();
-  this->Superclass::SetActiveScalarName(scalarName);
-  this->Superclass::SetActiveAttributeLocation(location);
-  this->UpdateAssignedAttribute();
-  this->EndModify(wasModifying);
-}
-
-//---------------------------------------------------------------------------
-void vtkMRMLModelDisplayNode::SetScalarRangeFlag(int flag)
-{
-  if (flag == this->ScalarRangeFlag)
-    {
-    return;
-    }
-  int wasModifying = this->StartModify();
-  this->Superclass::SetScalarRangeFlag(flag);
-  this->UpdateScalarRange();
-  this->EndModify(wasModifying);
-}
-
-//---------------------------------------------------------------------------
 void vtkMRMLModelDisplayNode::UpdateAssignedAttribute()
 {
   this->AssignAttribute->Assign(
@@ -442,68 +420,10 @@ void vtkMRMLModelDisplayNode::UpdateAssignedAttribute()
   this->UpdateScalarRange();
 }
 
-//---------------------------------------------------------------------------
-void vtkMRMLModelDisplayNode::UpdateScalarRange()
+//-----------------------------------------------------------
+vtkDataSet* vtkMRMLModelDisplayNode::GetScalarDataSet()
 {
-  if (!this->GetInputMesh())
-    {
-    return;
-    }
-
-  if (this->GetScalarRangeFlag() == vtkMRMLDisplayNode::UseManualScalarRange)
-    {
-    return;
-    }
-
-  double newScalarRange[2] = { 0.0, -1.0 };
-  int flag = this->GetScalarRangeFlag();
-  if (flag == vtkMRMLDisplayNode::UseDataScalarRange)
-    {
-    vtkDataArray *dataArray = this->GetActiveScalarArray();
-    if (dataArray)
-      {
-      dataArray->GetRange(newScalarRange);
-      }
-    }
-  else if (flag == vtkMRMLDisplayNode::UseColorNodeScalarRange)
-    {
-    if (this->GetColorNode())
-      {
-      vtkLookupTable* lut = this->GetColorNode()->GetLookupTable();
-      if (lut)
-        {
-        double* lutRange = lut->GetRange();
-        newScalarRange[0] = lutRange[0];
-        newScalarRange[1] = lutRange[1];
-        }
-      else
-        {
-        vtkWarningMacro("Can not use color node scalar range since model "
-                        << "display node color node does not have a lookup table.");
-        }
-      }
-    else
-      {
-      vtkWarningMacro("Can not use color node scalar range since model "
-                      << "display node does not have a color node.");
-      }
-    }
-  else if (flag == vtkMRMLDisplayNode::UseDataTypeScalarRange)
-    {
-    vtkDataArray *dataArray = this->GetActiveScalarArray();
-    if (dataArray)
-      {
-      newScalarRange[0] = dataArray->GetDataTypeMin();
-      newScalarRange[1] = dataArray->GetDataTypeMax();
-      }
-    else
-      {
-      vtkWarningMacro("Can not use data type scalar range since the model display node's"
-                      << "mesh does not have an active scalar array.");
-      }
-    }
-
-  this->SetScalarRange(newScalarRange);
+  return this->GetInputMesh();
 }
 
 //-----------------------------------------------------------

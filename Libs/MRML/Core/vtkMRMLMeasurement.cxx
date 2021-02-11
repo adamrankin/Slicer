@@ -15,8 +15,6 @@ or http://www.slicer.org/copyright/copyright.txt for details.
 // STD include
 #include <sstream>
 
-vtkStandardNewMacro(vtkMRMLMeasurement);
-
 //----------------------------------------------------------------------------
 vtkMRMLMeasurement::vtkMRMLMeasurement()
 {
@@ -34,7 +32,11 @@ std::string vtkMRMLMeasurement::GetValueWithUnitsAsPrintableString()
 {
   if (!this->PrintFormat)
     {
-    return  "";
+    return "";
+    }
+  if (!this->ValueDefined)
+    {
+    return "(undefined)";
     }
   char buf[80] = { 0 };
   snprintf(buf, sizeof(buf) - 1, this->PrintFormat, this->Value, this->Units);
@@ -44,8 +46,10 @@ std::string vtkMRMLMeasurement::GetValueWithUnitsAsPrintableString()
 //----------------------------------------------------------------------------
 void vtkMRMLMeasurement::Initialize()
 {
+  this->SetEnabled(true);
   this->SetName(nullptr);
   this->SetValue(0.0);
+  this->ValueDefined = false;
   this->SetUnits(nullptr);
   this->SetPrintFormat("%5.3f %s");
   this->SetDescription(nullptr);
@@ -53,15 +57,34 @@ void vtkMRMLMeasurement::Initialize()
   this->SetDerivationCode(nullptr);
   this->SetUnitsCode(nullptr);
   this->SetMethodCode(nullptr);
+  this->SetControlPointValues(nullptr);
+#ifdef USE_POLYDATA_MEASUREMENTS
+  this->SetPolyDataValues(nullptr);
+#endif
+  this->SetInputMRMLNode(nullptr);
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLMeasurement::ClearValue()
+{
+  this->SetValue(0.0);
+  this->ValueDefined = false;
+
+  // Note: this->SetControlPointValues(nullptr); is not called here, because if we clear it here
+  // then every time something in the markups node changes that calls curveGenerator->Modified()
+  // that is supposed to use just these control point values, the UpdateMeasurementsInternal call
+  // clears the value, thus deleting the control point data.
 }
 
 //----------------------------------------------------------------------------
 void vtkMRMLMeasurement::PrintSelf(ostream& os, vtkIndent indent)
 {
   Superclass::PrintSelf(os,indent);
+  os << indent << "Enabled: " << (this->Enabled ? "true" : "false") << "\n";
   os << indent << "Name: " << (this->Name ? this->Name : "(none)") << "\n";
   os << indent << "PrintableValue: " << this->GetValueWithUnitsAsPrintableString();
   os << indent << "Value: " << this->Value << "\n";
+  os << indent << "ValueDefined: " << (this->ValueDefined ? "true" : "false") << "\n";
   os << indent << "Units: " << (this->Units ? this->Units : "(none)") << "\n";
   os << indent << "PrintFormat: " << (this->PrintFormat ? this->PrintFormat : "(none)") << "\n";
   os << indent << "Description: " << (this->Description ? this->Description : "(none)") << "\n";
@@ -90,8 +113,10 @@ void vtkMRMLMeasurement::Copy(vtkMRMLMeasurement* src)
     {
     return;
     }
+  this->SetEnabled(src->Enabled);
   this->SetName(src->GetName());
   this->SetValue(src->GetValue());
+  this->ValueDefined = src->GetValueDefined();
   this->SetUnits(src->GetUnits());
   this->SetPrintFormat(src->GetPrintFormat());
   this->SetDescription(src->GetDescription());
@@ -99,6 +124,11 @@ void vtkMRMLMeasurement::Copy(vtkMRMLMeasurement* src)
   this->SetDerivationCode(src->DerivationCode);
   this->SetUnitsCode(src->UnitsCode);
   this->SetMethodCode(src->MethodCode);
+  this->SetControlPointValues(src->ControlPointValues);
+  this->SetInputMRMLNode(src->InputMRMLNode);
+#ifdef USE_POLYDATA_MEASUREMENTS
+  this->SetPolyDataValues(src->PolyDataValues);
+#endif
 }
 
 //----------------------------------------------------------------------------
@@ -253,4 +283,87 @@ void vtkMRMLMeasurement::SetMethodCode(vtkCodedEntry* entry)
     this->MethodCode = vtkCodedEntry::New();
     }
   this->MethodCode->Copy(entry);
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLMeasurement::SetControlPointValues(vtkDoubleArray* inputValues)
+{
+  if (!inputValues)
+    {
+    if (this->ControlPointValues)
+      {
+      this->ControlPointValues->Delete();
+      this->ControlPointValues = nullptr;
+      }
+    return;
+    }
+  if (!this->ControlPointValues)
+    {
+    this->ControlPointValues = vtkDoubleArray::New();
+    }
+  this->ControlPointValues->DeepCopy(inputValues);
+}
+
+#ifdef USE_POLYDATA_MEASUREMENTS
+//----------------------------------------------------------------------------
+void vtkMRMLMeasurement::SetPolyDataValues(vtkPolyData* inputValues)
+{
+  if (!inputValues)
+    {
+    if (this->PolyDataValues)
+      {
+      this->PolyDataValues->Delete();
+      this->PolyDataValues = nullptr;
+      }
+    return;
+    }
+  if (!this->PolyDataValues)
+    {
+    this->PolyDataValues = vtkPolyData::New();
+    }
+  this->PolyDataValues->DeepCopy(inputValues);
+}
+#endif
+
+//----------------------------------------------------------------------------
+void vtkMRMLMeasurement::SetInputMRMLNode(vtkMRMLNode* node)
+{
+  this->InputMRMLNode = node;
+}
+
+//----------------------------------------------------------------------------
+vtkMRMLNode* vtkMRMLMeasurement::GetInputMRMLNode()
+{
+  if (this->InputMRMLNode.GetPointer())
+    {
+    return this->InputMRMLNode.GetPointer();
+    }
+
+  return nullptr;
+}
+
+//----------------------------------------------------------------------------
+const char* vtkMRMLMeasurement::GetLastComputationResultAsPrintableString()
+{
+  switch (this->LastComputationResult)
+    {
+    case OK: return "OK";
+    case InsufficientInput: return "Insufficient input";
+    case InternalError: return "Internal error";
+    default:
+      // invalid id
+      return "";
+    }
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLMeasurement::SetValue(double value)
+{
+  vtkDebugMacro(<< this->GetClassName() << " (" << this << "): setting Value to " << value);
+  if (this->Value != value)
+  {
+    this->Value = value;
+    this->ValueDefined = true;
+    this->Modified();
+  }
 }

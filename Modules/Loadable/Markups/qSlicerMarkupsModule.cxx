@@ -40,6 +40,7 @@
 #include "qSlicerMarkupsModule.h"
 #include "qSlicerMarkupsModuleWidget.h"
 #include "qSlicerMarkupsReader.h"
+#include "qSlicerMarkupsWriter.h"
 //#include "qSlicerMarkupsSettingsPanel.h"
 //#include "vtkSlicerMarkupsLogic.h"
 #include "vtkMRMLMarkupsDisplayNode.h"
@@ -126,8 +127,7 @@ void qSlicerMarkupsModule::setup()
   qSlicerIOManager* ioManager = qSlicerApplication::application()->ioManager();
   qSlicerMarkupsReader *markupsReader = new qSlicerMarkupsReader(vtkSlicerMarkupsLogic::SafeDownCast(this->logic()), this);
   ioManager->registerIO(markupsReader);
-  ioManager->registerIO(new qSlicerNodeWriter("Markups", "MarkupsFile", QStringList() << "vtkMRMLMarkupsNode", true, this));
-  ioManager->registerIO(new qSlicerNodeWriter("Markups Fiducial", "MarkupsFiducialFile", QStringList() << "vtkMRMLMarkupsFiducialNode", true, this));
+  ioManager->registerIO(new qSlicerMarkupsWriter(this));
 
   // settings
   /*
@@ -169,6 +169,7 @@ QStringList qSlicerMarkupsModule::associatedNodeTypes() const
     << "vtkMRMLMarkupsCurveNode"
     << "vtkMRMLMarkupsClosedCurveNode"
     << "vtkMRMLMarkupsPlaneNode"
+    << "vtkMRMLMarkupsROINode"
     << "vtkMRMLMarkupsFiducialStorageNode"
     << "vtkMRMLMarkupsJsonStorageNode";
 }
@@ -211,6 +212,12 @@ void qSlicerMarkupsModule::readDefaultMarkupsDisplaySettings(vtkMRMLMarkupsDispl
   if (settings.contains("Markups/UnselectedColor"))
     {
     QVariant variant = settings.value("Markups/UnselectedColor");
+    QColor qcolor = variant.value<QColor>();
+    markupsDisplayNode->SetColor(qcolor.redF(), qcolor.greenF(), qcolor.blueF());
+    }
+  if (settings.contains("Markups/ActiveColor"))
+    {
+    QVariant variant = settings.value("Markups/ActiveColor");
     QColor qcolor = variant.value<QColor>();
     markupsDisplayNode->SetColor(qcolor.redF(), qcolor.greenF(), qcolor.blueF());
     }
@@ -267,6 +274,8 @@ void qSlicerMarkupsModule::writeDefaultMarkupsDisplaySettings(vtkMRMLMarkupsDisp
   settings.setValue("Markups/SelectedColor", QColor::fromRgbF(color[0], color[1], color[2]));
   color = markupsDisplayNode->GetColor();
   settings.setValue("Markups/UnselectedColor", QColor::fromRgbF(color[0], color[1], color[2]));
+  color = markupsDisplayNode->GetActiveColor();
+  settings.setValue("Markups/ActiveColor", QColor::fromRgbF(color[0], color[1], color[2]));
   settings.setValue("Markups/UseGlyphScale", markupsDisplayNode->GetUseGlyphScale());
   settings.setValue("Markups/GlyphScale", markupsDisplayNode->GetGlyphScale());
   settings.setValue("Markups/GlyphSize", markupsDisplayNode->GetGlyphSize());

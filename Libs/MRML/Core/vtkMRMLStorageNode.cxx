@@ -17,9 +17,10 @@ Version:   $Revision: 1.1.1.1 $
 #include "vtkCacheManager.h"
 #include "vtkDataFileFormatHelper.h"
 #include "vtkDataIOManager.h"
+#include "vtkMRMLMessageCollection.h"
+#include "vtkMRMLScene.h"
 #include "vtkMRMLStorableNode.h"
 #include "vtkMRMLStorageNode.h"
-#include "vtkMRMLScene.h"
 
 // VTK includes
 #include <vtkCollection.h>
@@ -57,6 +58,7 @@ vtkMRMLStorageNode::vtkMRMLStorageNode()
   this->SupportedWriteFileTypes = vtkStringArray::New();
   this->WriteFileFormat = nullptr;
   this->StoredTime = vtkTimeStamp::New();
+  this->UserMessages = vtkMRMLMessageCollection::New();
 }
 
 //----------------------------------------------------------------------------
@@ -103,6 +105,11 @@ vtkMRMLStorageNode::~vtkMRMLStorageNode()
     this->StoredTime->Delete();
     this->StoredTime = nullptr;
     }
+  if (this->UserMessages)
+    {
+    this->UserMessages->Delete();
+    this->UserMessages = nullptr;
+    }
 }
 
 //----------------------------------------------------------------------------
@@ -143,7 +150,8 @@ void vtkMRMLStorageNode::WriteXML(ostream& of, int nIndent)
         }
       else
         {
-        vtkWarningMacro("WriteXML: unable to convert relative file path to absolute, still using " << this->FileName);
+        vtkWarningToMessageCollectionMacro(this->GetUserMessages(), "WriteXML",
+          "Unable to convert relative file path to absolute, still using " << this->FileName);
         }
       }
     }
@@ -168,7 +176,8 @@ void vtkMRMLStorageNode::WriteXML(ostream& of, int nIndent)
         }
       else
         {
-        vtkWarningMacro("WriteXML: unable to convert relative file path to absolute, still using " << this->GetNthFileName(i));
+        vtkWarningToMessageCollectionMacro(this->GetUserMessages(), "WriteXML",
+          "Unable to convert relative file path to absolute, still using " << this->GetNthFileName(i));
         }
       }
     }
@@ -395,6 +404,14 @@ void vtkMRMLStorageNode::PrintSelf(ostream& os, vtkIndent indent)
     (this->GetDefaultWriteFileExtension() ? this->GetDefaultWriteFileExtension() : "(none)") << "\n";
 
   os << indent << "TempFileName: " << (this->TempFileName ? this->TempFileName : "(none)") << "\n";
+  if (this->UserMessages)
+    {
+    this->UserMessages->PrintSelf(os, indent);
+    }
+  else
+    {
+    os << indent << "UserMessages: (none)\n";
+    }
 }
 
 //----------------------------------------------------------------------------
@@ -486,7 +503,8 @@ void vtkMRMLStorageNode::StageReadData ( vtkMRMLNode *refNode )
         }
       else
         {
-        vtkErrorMacro("StageReadData: unable to get a URI handler for " << this->URI << ", resetting stage to idle");
+        vtkErrorToMessageCollectionMacro(this->GetUserMessages(), "vtkMRMLStorageNode::StageReadData",
+          "Unable to get a URI handler for " << this->URI << ", resetting stage to idle");
         this->SetReadStateIdle();
         return;
         }
@@ -500,7 +518,8 @@ void vtkMRMLStorageNode::StageReadData ( vtkMRMLNode *refNode )
     }
   else
     {
-    vtkWarningMacro("StageReadData: No IO Manager on the scene, returning.");
+    vtkWarningToMessageCollectionMacro(this->GetUserMessages(), "vtkMRMLStorageNode::StageReadData",
+      "No IO Manager on the scene");
     }
   vtkDebugMacro("StageReadData: done");
 }
@@ -560,7 +579,8 @@ void vtkMRMLStorageNode::StageWriteData ( vtkMRMLNode *refNode )
          }
        if (this->URIHandler == nullptr)
          {
-         vtkErrorMacro("StageWriteData: unable to get a URI handler for " << this->URI << ", resetting stage to idle");
+         vtkErrorToMessageCollectionMacro(this->GetUserMessages(), "vtkMRMLStorageNode::StageWriteData",
+           "Unable to get a URI handler for " << this->URI << ", resetting stage to idle");
          return;
          }
        vtkDebugMacro("StageWriteData: got a URI Handler");
@@ -574,7 +594,8 @@ void vtkMRMLStorageNode::StageWriteData ( vtkMRMLNode *refNode )
      }
    else
      {
-     vtkWarningMacro("StageWriteData: No IO Manager on the scene, returning.");
+     vtkWarningToMessageCollectionMacro(this->GetUserMessages(), "vtkMRMLStorageNode::StageWriteData",
+       "StageWriteData: No IO Manager on the scene");
      }
 }
 
@@ -772,7 +793,8 @@ unsigned int vtkMRMLStorageNode::AddFileName( const char* filename )
 {
   if (!filename)
     {
-    vtkErrorMacro("AddFileName: can't add a null file name");
+    vtkErrorToMessageCollectionMacro(this->GetUserMessages(), "vtkMRMLStorageNode::AddFileName",
+      "Cannot add a null file name");
     return 0;
     }
   std::string filenamestr (filename);
@@ -805,17 +827,20 @@ void vtkMRMLStorageNode::ResetNthFileName(int n, const char* fileName)
 {
   if (fileName == nullptr)
     {
-    vtkErrorMacro("ResetNthFileName: given file name is null (n = " << n << ")");
+    vtkErrorToMessageCollectionMacro(this->GetUserMessages(), "vtkMRMLStorageNode::ResetNthFileName",
+      "ResetNthFileName: given file name is null (n = " << n << ").");
     return;
     }
   if (n < 0)
     {
-    vtkErrorMacro("ResetNthFileName: invalid file name number (n = " << n << ")");
+    vtkErrorToMessageCollectionMacro(this->GetUserMessages(), "vtkMRMLStorageNode::ResetNthFileName",
+      "ResetNthFileName: invalid file name number (n = " << n << ").");
     return;
     }
   else if (n >= this->GetNumberOfFileNames())
     {
-    vtkErrorMacro("ResetNthFileName: file name number " << n << " not already set, returning.");
+    vtkErrorToMessageCollectionMacro(this->GetUserMessages(), "vtkMRMLStorageNode::ResetNthFileName",
+      "ResetNthFileName: file name number " << n << " not already set.");
     return;
     }
   this->FileNameList[n] = fileName;
@@ -826,7 +851,8 @@ unsigned int vtkMRMLStorageNode::AddURI( const char* uri )
 {
   if (uri == nullptr)
     {
-    vtkErrorMacro("AddURI: can't add a null URI");
+    vtkErrorToMessageCollectionMacro(this->GetUserMessages(), "vtkMRMLStorageNode::AddURI",
+      "Cannot add a null URI.");
     return 0;
     }
   std::string uristr (uri);
@@ -858,7 +884,8 @@ void vtkMRMLStorageNode::ResetNthURI(int n, const char* uri)
 {
   if (uri == nullptr)
     {
-    vtkErrorMacro("ResetNthURI: given URI is null (n = " << n << ")");
+    vtkErrorToMessageCollectionMacro(this->GetUserMessages(), "vtkMRMLStorageNode::ResetNthURI",
+      "ResetNthURI: given URI is null (n = " << n << ").");
     return;
     }
   if (n >= 0 && this->GetNumberOfURIs() >= n)
@@ -867,7 +894,8 @@ void vtkMRMLStorageNode::ResetNthURI(int n, const char* uri)
     }
   else
     {
-    vtkErrorMacro("RestNthURI: URI number " << n << " not already set, returning.");
+    vtkErrorToMessageCollectionMacro(this->GetUserMessages(), "vtkMRMLStorageNode::ResetNthURI",
+      "ResetNthURI: URI number " << n << " not already set.");
     }
 }
 
@@ -876,12 +904,14 @@ void vtkMRMLStorageNode::SetDataDirectory(const char *dataDirName)
 {
   if (dataDirName == nullptr)
     {
-    vtkErrorMacro("SetDataDirectory: input directory name is null, returning.");
+    vtkErrorToMessageCollectionMacro(this->GetUserMessages(), "vtkMRMLStorageNode::SetDataDirectory",
+      "Input directory name is null.");
     return;
     }
   if (this->GetFileName() == nullptr)
     {
-    vtkWarningMacro("SetDataDirectory: file name is null, no reason to reset data directory.");
+    vtkWarningToMessageCollectionMacro(this->GetUserMessages(), "vtkMRMLStorageNode::SetDataDirectory",
+      "File name is null, no reason to reset data directory.");
     return;
     }
   // reset the filename
@@ -916,10 +946,12 @@ void vtkMRMLStorageNode::SetURIPrefix(const char *uriPrefix)
 {
   if (uriPrefix == nullptr)
     {
-    vtkErrorMacro("SetURIPrefix: input prefix is null, returning.");
+    vtkErrorToMessageCollectionMacro(this->GetUserMessages(), "vtkMRMLStorageNode::SetURIPrefix",
+      "Input URI prefix is null.");
     return;
     }
-  vtkWarningMacro("SetURIPrefix " << uriPrefix << " NOT IMPLEMENTED YET");
+  vtkWarningToMessageCollectionMacro(this->GetUserMessages(), "vtkMRMLStorageNode::SetURIPrefix",
+    "Setting URI prefix is not implemented yet.");
   // reset the uri
 
   // then reset all the uris in the list
@@ -1119,7 +1151,8 @@ const char *vtkMRMLStorageNode::GetAbsoluteFilePath(const char *inputPath)
   if (!this->GetScene() ||
       !this->GetScene()->GetRootDirectory())
     {
-    vtkErrorMacro("GetAbsoluteFilePath: have a relative path " << inputPath << " but no scene or root directory to find it from!");
+    vtkErrorToMessageCollectionMacro(this->GetUserMessages(), "vtkMRMLStorageNode::GetAbsoluteFilePath",
+      "Relative path " << inputPath << " is specified but no scene or root directory to find it from.");
     return nullptr;
     }
 
@@ -1169,17 +1202,20 @@ int vtkMRMLStorageNode::ReadData(vtkMRMLNode* refNode, bool temporary)
 {
   if (refNode == nullptr)
     {
-    vtkErrorMacro("ReadData: can't read into a null node");
+    vtkErrorToMessageCollectionMacro(this->GetUserMessages(), "vtkMRMLStorageNode::ReadData",
+      "Cannot read data into a null node.");
     return 0;
     }
 
   if ( !this->CanReadInReferenceNode(refNode) )
     {
+    vtkErrorToMessageCollectionMacro(this->GetUserMessages(), "vtkMRMLStorageNode::ReadData",
+      "Cannot read data into reference node of class " << refNode->GetClassName() << ".");
     return 0;
     }
 
   // do not read if if we are not in the scene (for example inside snapshot)
-  if ( !refNode->GetAddToScene() )
+  if (!refNode->GetAddToScene())
     {
     return 0;
     }
@@ -1191,7 +1227,8 @@ int vtkMRMLStorageNode::ReadData(vtkMRMLNode* refNode, bool temporary)
 
   if (this->GetFileName() == nullptr && this->GetURI() == nullptr)
     {
-    vtkErrorMacro("ReadData: both filename and uri are null.");
+    vtkErrorToMessageCollectionMacro(this->GetUserMessages(), "vtkMRMLStorageNode::ReadData",
+      "Both filename and uri are null.");
     return 0;
     }
 
@@ -1199,27 +1236,64 @@ int vtkMRMLStorageNode::ReadData(vtkMRMLNode* refNode, bool temporary)
   if ( this->GetReadState() != this->TransferDone )
     {
     // remote file download hasn't finished
-    vtkWarningMacro("ReadData: read state is pending, remote download hasn't finished yet");
+    vtkWarningToMessageCollectionMacro(this->GetUserMessages(), "vtkMRMLStorageNode::ReadData",
+      "ReadData: read state is pending, remote download hasn't finished yet");
     return 0;
     }
   vtkDebugMacro("ReadData: read state is ready, "
     <<  "URI = " << (this->GetURI() == nullptr ? "null" : this->GetURI()) << ", "
     << "filename = " << (this->GetFileName() == nullptr ? "null" : this->GetFileName()));
-  int res = this->ReadDataInternal(refNode);
-  if (res)
+  vtkMRMLStorableNode* storableNode = vtkMRMLStorableNode::SafeDownCast(refNode);
+  int success = this->ReadDataInternal(refNode);
+  if (!success)
     {
-    vtkMRMLStorableNode* storableNode = vtkMRMLStorableNode::SafeDownCast(refNode);
+    // failed
+    std::string storableNodeID = "(null)";
+    std::string storableNodeName = "(null)";
     if (storableNode)
       {
-      storableNode->SetAndObserveStorageNodeID(this->GetID());
+      if (storableNode->GetID())
+        {
+        storableNodeID = storableNode->GetID();
+        }
+      if (storableNode->GetName())
+        {
+        storableNodeName = storableNode->GetName();
+        }
       }
-    this->SetReadStateIdle();
-    if (!temporary)
+    std::string location;
+    if (this->GetURI())
       {
-      this->StoredTime->Modified();
+      location += std::string(" URI='") + this->GetURI() + "'";
       }
+    if (this->GetFileName())
+      {
+      location += std::string(" filename='") + this->GetFileName() + "'";
+      }
+    if (location.empty())
+      {
+      location += " - no URI or filename is specified";
+      }
+    else
+      {
+      location = " from" + location;
+      }
+    vtkErrorToMessageCollectionMacro(this->GetUserMessages(), "vtkMRMLStorageNode::ReadData",
+      "Failed to read node " << storableNodeName << " (" << storableNodeID << ")" << location);
+
+    return 0;
     }
-  return res;
+  // success
+  if (storableNode)
+    {
+    storableNode->SetAndObserveStorageNodeID(this->GetID());
+    }
+  this->SetReadStateIdle();
+  if (!temporary)
+    {
+    this->StoredTime->Modified();
+    }
+  return success;
 }
 
 //------------------------------------------------------------------------------
@@ -1228,7 +1302,8 @@ int vtkMRMLStorageNode::WriteData(vtkMRMLNode* refNode)
   this->WriteState = this->Idle;
   if (refNode == nullptr)
     {
-    vtkErrorMacro("WriteData: can't write, input node is null");
+    vtkErrorToMessageCollectionMacro(this->GetUserMessages(), "vtkMRMLStorageNode::WriteData",
+      "Cannot write " << (this->GetID() ? this->GetID() : "(null)") << ": input node is null");
     return 0;
     }
 

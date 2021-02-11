@@ -222,11 +222,10 @@ void qSlicerSubjectHierarchyPluginLogic::onNodeAdded(vtkObject* sceneObject, vtk
 
     // Add subject hierarchy node for the added data node
     // Don't add to subject hierarchy automatically one-by-one if importing scene, because the SH nodes may be stored in the scene and loaded
-    // Also abort if invalid or hidden node or if explicitly excluded from subject hierarchy before even adding to the scene
-    if ( scene->IsImporting()
-      || !node
-      || node->GetHideFromEditors()
-      || node->GetAttribute(vtkMRMLSubjectHierarchyConstants::GetSubjectHierarchyExcludeFromTreeAttributeName().c_str()) )
+    // Also abort if invalid or hidden node. The HideFromEditors flag is not considered to work dynamically, meaning that
+    // we don't expect changes on the UI when we set it after adding it to the scene, so not adding it to SH should not cause issues.
+    // The GetSubjectHierarchyExcludeFromTreeAttributeName attribute on the other hand is dynamic, so we add the node to SH despite that.
+    if (scene->IsImporting() || !node || node->GetHideFromEditors())
       {
       return;
       }
@@ -437,18 +436,35 @@ void qSlicerSubjectHierarchyPluginLogic::onSceneBatchProcessEnded(vtkObject* sce
 //-----------------------------------------------------------------------------
 void qSlicerSubjectHierarchyPluginLogic::onDisplayNodeModified(vtkObject* displayableNodeObject, vtkObject* displayNodeObject)
 {
-  Q_UNUSED(displayableNodeObject);
-
   vtkMRMLDisplayNode* displayNode = vtkMRMLDisplayNode::SafeDownCast(displayNodeObject);
-  if (!displayNode)
+  if (displayNode)
     {
-    qCritical() << Q_FUNC_INFO<< ": Invalid object type calling display node modified event";
-    return;
+    if (!qvtkIsConnected(displayNode, vtkMRMLDisplayNode::MenuEvent, this, SLOT(onDisplayMenuEvent(vtkObject*, vtkObject*))))
+      {
+      qvtkConnect(displayNode, vtkMRMLDisplayNode::MenuEvent, this, SLOT(onDisplayMenuEvent(vtkObject*, vtkObject*)));
+      }
     }
-
-  if (!qvtkIsConnected(displayNode, vtkMRMLDisplayNode::MenuEvent, this, SLOT(onDisplayMenuEvent(vtkObject*, vtkObject*))))
+  else
     {
-    qvtkConnect( displayNode, vtkMRMLDisplayNode::MenuEvent, this, SLOT( onDisplayMenuEvent(vtkObject*, vtkObject*) ) );
+    // end of batch processing, no display node object is provided (as multiple display nodes may have been changed)
+    // update the observer on all of them
+    vtkMRMLDisplayableNode* displayableNode = vtkMRMLDisplayableNode::SafeDownCast(displayableNodeObject);
+    if (displayableNode)
+      {
+      int numberOfDisplayNodes = displayableNode->GetNumberOfDisplayNodes();
+      for (int displayNodeIndex = 0; displayNodeIndex < numberOfDisplayNodes; displayNodeIndex++)
+        {
+        vtkMRMLDisplayNode* displayNode = displayableNode->GetNthDisplayNode(displayNodeIndex);
+        if (!displayNode)
+          {
+          continue;
+          }
+        if (!qvtkIsConnected(displayNode, vtkMRMLDisplayNode::MenuEvent, this, SLOT(onDisplayMenuEvent(vtkObject*, vtkObject*))))
+          {
+          qvtkConnect(displayNode, vtkMRMLDisplayNode::MenuEvent, this, SLOT(onDisplayMenuEvent(vtkObject*, vtkObject*)));
+          }
+        }
+      }
     }
 }
 
@@ -545,9 +561,10 @@ void qSlicerSubjectHierarchyPluginLogic::addSupportedDataNodesToSubjectHierarchy
   for (std::vector<vtkMRMLNode*>::iterator nodeIt = supportedNodes.begin(); nodeIt != supportedNodes.end(); ++nodeIt)
     {
     vtkMRMLNode* node = (*nodeIt);
-    // Do not add into subject hierarchy if hidden or excluded
-    if ( node->GetHideFromEditors()
-      || node->GetAttribute(vtkMRMLSubjectHierarchyConstants::GetSubjectHierarchyExcludeFromTreeAttributeName().c_str()))
+    // Do not add into subject hierarchy if hidden. The HideFromEditors flag is not considered to work dynamically, meaning that
+    // we don't expect changes on the UI when we set it after adding it to the scene, so not adding it to SH should not cause issues.
+    // The GetSubjectHierarchyExcludeFromTreeAttributeName attribute on the other hand is dynamic, so we add the node to SH despite that.
+    if (node->GetHideFromEditors())
       {
       continue;
       }

@@ -22,6 +22,7 @@
 #include <algorithm>
 #include <sstream>
 
+#include "vtkMRMLMessageCollection.h"
 #include <vtkMRMLTextNode.h>
 #include "vtkMRMLTextStorageNode.h"
 
@@ -106,7 +107,7 @@ bool vtkMRMLTextStorageNode::CanWriteFromReferenceNode(vtkMRMLNode * refNode)
   vtkMRMLTextNode* textNode = vtkMRMLTextNode::SafeDownCast(refNode);
   if (textNode == nullptr)
     {
-    vtkErrorMacro("vtkMRMLTextStorageNode::CanWriteFromReferenceNode: input is not a text node");
+    this->GetUserMessages()->AddMessage(vtkCommand::ErrorEvent, std::string("Only text nodes can written in this format."));
     return false;
     }
   return true;
@@ -138,7 +139,7 @@ int vtkMRMLTextStorageNode::WriteDataInternal(vtkMRMLNode * refNode)
       }
     }
 
-  ofstream file;
+  std::ofstream file;
   file.open(fullName);
   file << textNode->GetText();
   this->StageWriteData(refNode);

@@ -15,28 +15,17 @@ For Slicer-4.10 documentation, refer to the `3D Slicer wiki <https://www.slicer.
 
    user_guide/about
    user_guide/getting_started
-
-.. toctree::
-   :maxdepth: 3
-   :caption: User Guide:
+   user_guide/get_help
 
    user_guide/user_interface
    user_guide/data_loading_and_saving
    user_guide/image_segmentation
+   user_guide/registration
    user_guide/modules/index.rst
-   user_guide/extension_manager
+   user_guide/extensions_manager
    user_guide/settings
 
-.. toctree::
-   :maxdepth: 3
-   :caption: Developer Guide:
-
-   developer_guide/api
-   developer_guide/mrml_overview
-   developer_guide/extensions
-   developer_guide/python_faq
-   developer_guide/contributing
-   developer_guide/authors
+   developer_guide/index
 
 Indices and tables
 ==================

@@ -21,6 +21,7 @@
 #include "vtkMRMLdGEMRICProceduralColorNode.h"
 #include "vtkMRMLPETProceduralColorNode.h"
 #include "vtkMRMLProceduralColorStorageNode.h"
+#include "vtkMRMLScalarVolumeDisplayNode.h"
 #include "vtkMRMLScene.h"
 
 // VTK sys includes
@@ -37,6 +38,7 @@
 #include <cassert>
 #include <ctype.h> // For isspace
 #include <functional>
+#include <random>
 #include <sstream>
 
 //----------------------------------------------------------------------------
@@ -313,6 +315,17 @@ const char *vtkMRMLColorLogic::GetFileColorNodeID(const char * fileName)
 //----------------------------------------------------------------------------
 const char *vtkMRMLColorLogic::GetDefaultVolumeColorNodeID()
 {
+  // If color node is specified in default vtkMRMLScalarVolumeDisplayNode then use that.
+  vtkMRMLScene* scene = this->GetMRMLScene();
+  if (scene)
+    {
+    vtkMRMLScalarVolumeDisplayNode* defaultDisplayNode =
+      vtkMRMLScalarVolumeDisplayNode::SafeDownCast(scene->GetDefaultNodeByClass("vtkMRMLScalarVolumeDisplayNode"));
+    if (defaultDisplayNode && defaultDisplayNode->GetColorNodeID())
+      {
+      return defaultDisplayNode->GetColorNodeID();
+      }
+    }
   return vtkMRMLColorLogic::GetColorTableNodeID(vtkMRMLColorTableNode::Grey);
 }
 
@@ -484,15 +497,17 @@ vtkMRMLProceduralColorNode* vtkMRMLColorLogic::CreateRandomNode()
   procNode->SaveWithSceneOff();
   procNode->SetSingletonTag(procNode->GetTypeAsString());
 
+  std::default_random_engine randomGenerator(std::random_device{}());
+
   vtkColorTransferFunction *func = procNode->GetColorTransferFunction();
   const int dimension = 1000;
   double table[3*dimension];
   double* tablePtr = table;
   for (int i = 0; i < dimension; ++i)
     {
-    *tablePtr++ = static_cast<double>(rand())/RAND_MAX;
-    *tablePtr++ = static_cast<double>(rand())/RAND_MAX;
-    *tablePtr++ = static_cast<double>(rand())/RAND_MAX;
+    *tablePtr++ = static_cast<double>(randomGenerator()) / randomGenerator.max();
+    *tablePtr++ = static_cast<double>(randomGenerator()) / randomGenerator.max();
+    *tablePtr++ = static_cast<double>(randomGenerator()) / randomGenerator.max();
     }
   func->BuildFunctionFromTable(VTK_INT_MIN, VTK_INT_MAX, dimension, table);
   func->Build();

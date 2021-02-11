@@ -142,6 +142,7 @@ void vtkMRMLSegmentationStorageNode::Copy(vtkMRMLNode *anode)
 void vtkMRMLSegmentationStorageNode::InitializeSupportedReadFileTypes()
 {
   this->SupportedReadFileTypes->InsertNextValue("Segmentation (.seg.nrrd)");
+  this->SupportedReadFileTypes->InsertNextValue("Segmentation (.seg.nhdr)");
   this->SupportedReadFileTypes->InsertNextValue("Segmentation (.seg.vtm)");
   this->SupportedReadFileTypes->InsertNextValue("Segmentation (.nrrd)");
   this->SupportedReadFileTypes->InsertNextValue("Segmentation (.vtm)");
@@ -172,7 +173,9 @@ void vtkMRMLSegmentationStorageNode::InitializeSupportedWriteFileTypes()
   if (masterIsImage)
     {
     this->SupportedWriteFileTypes->InsertNextValue("Segmentation (.seg.nrrd)");
+    this->SupportedWriteFileTypes->InsertNextValue("Segmentation (.seg.nhdr)");
     this->SupportedWriteFileTypes->InsertNextValue("Segmentation (.nrrd)");
+    this->SupportedWriteFileTypes->InsertNextValue("Segmentation (.nhdr)");
     }
   if (masterIsPolyData)
     {
@@ -802,6 +805,8 @@ int vtkMRMLSegmentationStorageNode::ReadBinaryLabelmapRepresentation(vtkMRMLSegm
       }
     }
 
+  vtkMRMLColorTableNode* exportColorTableNode = segmentationNode->GetLabelmapConversionColorTableNode();
+
   // Add the created segments to the segmentation
   for (int segmentIndex = 0; segmentIndex < static_cast<int>(segments.size()); ++segmentIndex)
     {
@@ -855,7 +860,20 @@ int vtkMRMLSegmentationStorageNode::ReadBinaryLabelmapRepresentation(vtkMRMLSegm
       {
       std::stringstream segmentNameSS;
       segmentNameSS << "Segment_" << currentSegment->GetLabelValue();
-      currentSegmentID = segmentation->GenerateUniqueSegmentID(segmentNameSS.str());
+      std::string segmentName = segmentNameSS.str();
+      if (exportColorTableNode)
+        {
+        const char* colorName = exportColorTableNode->GetColorName(currentSegment->GetLabelValue());
+        if (colorName)
+          {
+          segmentName = colorName;
+          }
+
+        double color[4] = { 0.0, 0.0, 0.0 };
+        exportColorTableNode->GetColor(currentSegment->GetLabelValue(), color);
+        currentSegment->SetColor(color);
+        }
+      currentSegmentID = segmentation->GenerateUniqueSegmentID(segmentName);
       currentSegment->SetName(currentSegmentID.c_str());
       }
     segmentation->AddSegment(currentSegment, currentSegmentID);
@@ -908,6 +926,11 @@ int vtkMRMLSegmentationStorageNode::ReadPolyDataRepresentation(vtkMRMLSegmentati
     {
     // Get poly data representation
     vtkPolyData* currentPolyData = vtkPolyData::SafeDownCast(multiBlockDataset->GetBlock(blockIndex));
+    if (!currentPolyData)
+      {
+      vtkErrorMacro("ReadPolyDataRepresentation: Could not read block " << blockIndex);
+      continue;
+      }
 
     // Set master representation if it has not been set yet
     // (there is no global place to store it, but every segment field data contains a copy of it)

@@ -29,8 +29,14 @@
 #include "vtkMRMLDisplayNode.h"
 #include "vtkMRMLMarkupsNode.h"
 
+// vtkAddon includes
+#include <vtkAddonSetGet.h>
+
 // STD includes
 #include <map>
+
+// VTK include
+#include <vtkTextProperty.h>
 
 class vtkMRMLInteractionEventData;
 class vtkMRMLProceduralColorNode;
@@ -90,6 +96,7 @@ public:
     ComponentPlane,
     ComponentRotationHandle,
     ComponentTranslationHandle,
+    ComponentScaleHandle,
     };
   struct ComponentInfo
     {
@@ -159,6 +166,38 @@ public:
   vtkBooleanMacro(PropertiesLabelVisibility, bool);
   //@}
 
+  //@{
+  /**
+   * Control visibility of representation fill.
+   */
+  vtkSetMacro(FillVisibility, bool);
+  vtkGetMacro(FillVisibility, bool);
+  vtkBooleanMacro(FillVisibility, bool);
+
+  //@{
+  /**
+   * Control visibility of representation outline.
+   */
+  vtkSetMacro(OutlineVisibility, bool);
+  vtkGetMacro(OutlineVisibility, bool);
+  vtkBooleanMacro(OutlineVisibility, bool);
+
+  //@{
+  /**
+   * Control opacity of representation fill.
+   */
+  vtkSetMacro(FillOpacity, double);
+  vtkGetMacro(FillOpacity, double);
+  vtkBooleanMacro(FillOpacity, double);
+
+  //@{
+  /**
+   * Control opacity of representation edges.
+   */
+  vtkSetMacro(OutlineOpacity, double);
+  vtkGetMacro(OutlineOpacity, double);
+  vtkBooleanMacro(OutlineOpacity, double);
+
   /// Define how points are placed and moved in views
   enum SnapModes
     {
@@ -173,20 +212,20 @@ public:
   enum GlyphShapes
     {
     GlyphTypeInvalid = 0,
-    Vertex2D,
-    Dash2D,
+    StarBurst2D,
     Cross2D,
+    CrossDot2D,
     ThickCross2D,
+    Dash2D,
+    Sphere3D,
+    Vertex2D,
+    Circle2D,
     Triangle2D,
     Square2D,
-    Circle2D,
     Diamond2D,
     Arrow2D,
     ThickArrow2D,
     HookedArrow2D,
-    StarBurst2D,
-    Sphere3D,
-    Diamond3D,
     GlyphType_Last // insert new types above this line
     };
   /// Return the min/max glyph types, for iterating over them in tcl
@@ -341,16 +380,67 @@ public:
   vtkMRMLProceduralColorNode* GetLineColorNode();
   virtual const char* GetLineColorNodeReferenceRole();
 
+  /// Displays the occluded regions of the markup on top of other objects.
+  /// Opacity can be adjusted with OccludedOpacity
+  /// \sa SetOccludedOpacity, GetOccludedOpacity
+  vtkGetMacro(OccludedVisibility, bool);
+  vtkSetMacro(OccludedVisibility, bool);
+  vtkBooleanMacro(OccludedVisibility, bool);
+
+  /// Opacity of the occluded parts of the markup.
+  /// 0.0 results in the markup being fully transparent, while 1.0 is fully opaque.
+  /// \sa SetOccludedVisibility, GetOccludedVisibility
+  vtkGetMacro(OccludedOpacity, double);
+  vtkSetMacro(OccludedOpacity, double);
+
+  /// Text property object that controls the display properties of text actors in 2D and 3D.
+  /// The text object property controls background color/opacity, frame size/color, font, etc.
+  /// This function should always return a valid vtkTextProperty pointer.
+  vtkGetObjectMacro(TextProperty, vtkTextProperty);
+
+  /// Set the active color of the markup. This color is used when the mouse pointer hovers over a markup.
+  vtkSetVector3Macro(ActiveColor, double);
+  /// Get the active color of the markup. This color is used when the mouse pointer hovers over a markup.
+  vtkGetVector3Macro(ActiveColor, double);
+
   /// The visibility and interactability of the interaction handles
   vtkGetMacro(HandlesInteractive, bool);
   vtkSetMacro(HandlesInteractive, bool);
   vtkBooleanMacro(HandlesInteractive, bool);
+
+  /// Get data set containing the scalar arrays for this node type.
+  /// For markups it is the curve poly data
+  virtual vtkDataSet* GetScalarDataSet() override;
+  /// Return the current active scalar array (based on active scalar name and location)
+  virtual vtkDataArray* GetActiveScalarArray() override;
+
+  /// Update scalar range and update markups pipeline when the active scalar array is changed
+  virtual void UpdateAssignedAttribute() override;
 
 protected:
   vtkMRMLMarkupsDisplayNode();
   ~vtkMRMLMarkupsDisplayNode() override;
   vtkMRMLMarkupsDisplayNode( const vtkMRMLMarkupsDisplayNode& );
   void operator= ( const vtkMRMLMarkupsDisplayNode& );
+
+  // Set the text style from a string
+  // String format follows html-style conventions
+  void SetTextPropertyFromString(std::string textPropertyString);
+
+  // Return a string representing the text style
+  // String format follows html-style conventions
+  std::string GetTextPropertyAsString();
+
+  // Returns a string containing the text style of the vtkTextProperty
+  // String format follows html-style conventions
+  static std::string GetTextPropertyAsString(vtkTextProperty* property);
+
+  // Update the style of a vtkTextProperty from a string
+  // String format follows html-style conventions
+  static void UpdateTextPropertyFromString(std::string inputString, vtkTextProperty* property);
+
+  // Get the color from a string of the form: rgba(0,0,0,0)
+  static void GetColorFromString(const std::string& colorString, double color[4]);
 
   /// Current active point or widget component type and index (hovered by the mouse or other interaction context)
   /// Map interaction context identifier (empty string for mouse) to component type enum
@@ -360,6 +450,10 @@ protected:
 
   bool PropertiesLabelVisibility;
   bool PointLabelsVisibility;
+  bool FillVisibility;
+  bool OutlineVisibility;
+  double FillOpacity;
+  double OutlineOpacity;
   double TextScale;
   int GlyphType;
   double GlyphScale;
@@ -385,6 +479,13 @@ protected:
   double LineColorFadingEnd;
   double LineColorFadingSaturation;
   double LineColorFadingHueOffset;
+
+  bool OccludedVisibility;
+  double OccludedOpacity;
+
+  vtkTextProperty* TextProperty;
+
+  double ActiveColor[3];
 
   bool HandlesInteractive;
 };

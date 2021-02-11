@@ -79,7 +79,7 @@ protected:
     // there is a unique slice widget per node
     Q_ASSERT(!this->viewWidget(viewNode));
 
-    this->LastNode = viewNode;
+    this->LastNode = vtkMRMLSliceNode::SafeDownCast(viewNode);
 
     qMRMLSliceWidget * sliceWidget = new qMRMLSliceWidget(this->layoutManager()->viewport());
     sliceWidget->sliceController()->setControllerButtonGroup(this->SliceControllerButtonGroup);
@@ -162,7 +162,7 @@ public:
     return "vtkMRMLCustomViewNode";
   }
 
-  vtkWeakPointer<vtkMRMLSliceNode> LastNode;
+  vtkWeakPointer<vtkMRMLCustomViewNode> LastNode;
 
 protected:
 
@@ -177,7 +177,7 @@ protected:
     // There must be a unique Custom widget per node
     Q_ASSERT(!this->viewWidget(viewNode));
 
-    this->LastNode = viewNode;
+    this->LastNode = vtkMRMLCustomViewNode::SafeDownCast(viewNode);
 
     QLabel* label = new QLabel();
     label->setText("This is a custom view");
@@ -227,7 +227,6 @@ int qMRMLLayoutManagerWithCustomFactoryTest(int argc, char * argv[] )
 
   qSlicerLayoutCustomSliceViewFactory* customSliceViewFactory =
       new qSlicerLayoutCustomSliceViewFactory(&layoutManager);
-    customSliceViewFactory->setSliceLogics(mrmlSliceViewFactory->sliceLogics());
 
   layoutManager.unregisterViewFactory(mrmlSliceViewFactory);
   layoutManager.registerViewFactory(customSliceViewFactory);

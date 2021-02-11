@@ -80,13 +80,18 @@ protected:
 
   void SetMarkupsNode(vtkMRMLMarkupsNode *markupsNode) override;
 
-  vtkSmartPointer<vtkPolyData> Line;
-  vtkSmartPointer<vtkPolyDataMapper> LineMapper;
-  vtkSmartPointer<vtkActor> LineActor;
-
+  vtkSmartPointer<vtkPolyData>   Line;
   vtkSmartPointer<vtkTubeFilter> TubeFilter;
 
+  vtkSmartPointer<vtkPolyDataMapper> LineMapper;
+  vtkSmartPointer<vtkPolyDataMapper> LineOccludedMapper;
+
+  vtkSmartPointer<vtkActor> LineActor;
+  vtkSmartPointer<vtkActor> LineOccludedActor;
+
   vtkSmartPointer<vtkCellLocator> CurvePointLocator;
+
+  double PreviousSpecularLightingCoeff{0.0};
 
 private:
   vtkSlicerCurveRepresentation3D(const vtkSlicerCurveRepresentation3D&) = delete;

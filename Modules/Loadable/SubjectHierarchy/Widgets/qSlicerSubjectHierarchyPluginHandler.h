@@ -35,8 +35,9 @@
 #include <vtkWeakPointer.h>
 
 // Qt includes
-#include <QObject>
+#include <QDateTime>
 #include <QList>
+#include <QObject>
 #include <QString>
 
 class vtkMRMLScene;
@@ -196,6 +197,9 @@ public:
   /// \param shNode the subject hierarchy node to observe
   void observeSubjectHierarchyNode(vtkMRMLSubjectHierarchyNode* shNode);
 
+  /// Show a list of items in a selected view (used for drag&drop of items into a view node)
+  void showItemsInView(vtkIdList* itemIDsToShow, vtkMRMLAbstractViewNode* viewNode);
+
 protected:
   /// Handle subject hierarchy node events
   static void onSubjectHierarchyNodeEvent(vtkObject* caller, unsigned long event, void* clientData, void* callData);
@@ -228,6 +232,9 @@ public:
 
   /// Private destructor made public to enable python wrapping
   ~qSlicerSubjectHierarchyPluginHandler() override;
+
+  /// Timestamp of the last plugin registration. Used to allow context menus be repopulated if needed.
+  QDateTime LastPluginRegistrationTime;
 
 private:
   Q_DISABLE_COPY(qSlicerSubjectHierarchyPluginHandler);

@@ -25,6 +25,7 @@
 #include <QNetworkAccessManager>
 #include <QNetworkRequest>
 #include <QNetworkReply>
+#include <QScopedPointer>
 #include <QSettings>
 #include <QStandardItemModel>
 #include <QTemporaryFile>
@@ -39,8 +40,10 @@
 
 // qRestAPI includes
 #include <qMidasAPI.h>
+#include <qRestResult.h>
 
 // QtCore includes
+#include "qSlicerCoreApplication.h"
 #include "qSlicerExtensionsManagerModel.h"
 #include "vtkSlicerConfigure.h"
 #include "vtkSlicerVersionConfigure.h"
@@ -233,6 +236,8 @@ public:
   qMidasAPI CheckForUpdatesApi;
   QHash<QUuid, UpdateCheckInformation> CheckForUpdatesRequests;
 
+  qMidasAPI GetExtensionMetadataApi;
+
   QHash<QString, UpdateDownloadInformation> AvailableUpdates;
 
   QString ExtensionsSettingsFilePath;
@@ -245,6 +250,12 @@ public:
   QString SlicerVersion;
 
   QStandardItemModelWithRole Model;
+
+  // Restore previous extension tab may want to run lots of queries.
+  // Results are cached in this variable to improve performance.
+  QMap<QString, ExtensionMetadataType> MidasResponseCache;
+
+  QMap<qSlicerExtensionDownloadTask*, QString> ActiveTasks;
 };
 
 // --------------------------------------------------------------------------
@@ -482,9 +493,9 @@ void qSlicerExtensionsManagerModelPrivate::addExtensionPathToApplicationSettings
 {
   Q_Q(qSlicerExtensionsManagerModel);
   QSettings settings(q->extensionsSettingsFilePath(), QSettings::IniFormat);
-  QStringList additionalPaths = settings.value("Modules/AdditionalPaths").toStringList();
+  QStringList additionalPaths = qSlicerCoreApplication::application()->toSlicerHomeAbsolutePaths(settings.value("Modules/AdditionalPaths").toStringList());
   settings.setValue("Modules/AdditionalPaths",
-                    appendToPathList(additionalPaths, q->extensionModulePaths(extensionName)));
+    qSlicerCoreApplication::application()->toSlicerHomeRelativePaths(appendToPathList(additionalPaths, q->extensionModulePaths(extensionName))));
 }
 
 // --------------------------------------------------------------------------
@@ -492,9 +503,9 @@ void qSlicerExtensionsManagerModelPrivate::removeExtensionPathFromApplicationSet
 {
   Q_Q(qSlicerExtensionsManagerModel);
   QSettings settings(q->extensionsSettingsFilePath(), QSettings::IniFormat);
-  QStringList additionalPaths = settings.value("Modules/AdditionalPaths").toStringList();
+  QStringList additionalPaths = qSlicerCoreApplication::application()->toSlicerHomeAbsolutePaths(settings.value("Modules/AdditionalPaths").toStringList());
   settings.setValue("Modules/AdditionalPaths",
-                    removeFromPathList(additionalPaths, q->extensionModulePaths(extensionName)));
+    qSlicerCoreApplication::application()->toSlicerHomeRelativePaths(removeFromPathList(additionalPaths, q->extensionModulePaths(extensionName))));
 }
 
 // --------------------------------------------------------------------------
@@ -510,27 +521,28 @@ void qSlicerExtensionsManagerModelPrivate::addExtensionPathToLauncherSettings(co
     this->warning(qSlicerExtensionsManagerModel::tr("Failed to open extensions settings file %1").arg(this->ExtensionsSettingsFilePath));
     return;
     }
+  qSlicerCoreApplication* app = qSlicerCoreApplication::application();
 
-  QStringList libraryPath = qSlicerExtensionsManagerModel::readArrayValues(settings, "LibraryPaths", "path");
+  QStringList libraryPath = app->toSlicerHomeAbsolutePaths(qSlicerExtensionsManagerModel::readArrayValues(settings, "LibraryPaths", "path"));
   qSlicerExtensionsManagerModel::writeArrayValues(settings,
-                         appendToPathList(libraryPath, this->extensionLibraryPaths(extensionName)),
+                         app->toSlicerHomeRelativePaths(appendToPathList(libraryPath, this->extensionLibraryPaths(extensionName))),
                          "LibraryPaths", "path");
 
-  QStringList paths = qSlicerExtensionsManagerModel::readArrayValues(settings, "Paths", "path");
+  QStringList paths = app->toSlicerHomeAbsolutePaths(qSlicerExtensionsManagerModel::readArrayValues(settings, "Paths", "path"));
   qSlicerExtensionsManagerModel::writeArrayValues(settings,
-                         appendToPathList(paths, this->extensionPaths(extensionName)),
+                         app->toSlicerHomeRelativePaths(appendToPathList(paths, this->extensionPaths(extensionName))),
                          "Paths", "path");
 
 #ifdef Slicer_USE_PYTHONQT
-  QStringList pythonPaths = qSlicerExtensionsManagerModel::readArrayValues(settings, "PYTHONPATH", "path");
+  QStringList pythonPaths = app->toSlicerHomeAbsolutePaths(qSlicerExtensionsManagerModel::readArrayValues(settings, "PYTHONPATH", "path"));
   qSlicerExtensionsManagerModel::writeArrayValues(settings,
-                         appendToPathList(pythonPaths, this->extensionPythonPaths(extensionName)),
+                         app->toSlicerHomeRelativePaths(appendToPathList(pythonPaths, this->extensionPythonPaths(extensionName))),
                          "PYTHONPATH", "path");
 #endif
 
-  QStringList qtPluginPaths = qSlicerExtensionsManagerModel::readArrayValues(settings, "QT_PLUGIN_PATH", "path");
+  QStringList qtPluginPaths = app->toSlicerHomeAbsolutePaths(qSlicerExtensionsManagerModel::readArrayValues(settings, "QT_PLUGIN_PATH", "path"));
   qSlicerExtensionsManagerModel::writeArrayValues(settings,
-                         appendToPathList(qtPluginPaths, this->extensionQtPluginPaths(extensionName)),
+                         app->toSlicerHomeRelativePaths(appendToPathList(qtPluginPaths, this->extensionQtPluginPaths(extensionName))),
                          "QT_PLUGIN_PATH", "path");
 }
 
@@ -547,27 +559,28 @@ void qSlicerExtensionsManagerModelPrivate::removeExtensionPathFromLauncherSettin
     this->warning(qSlicerExtensionsManagerModel::tr("Failed to open extensions settings file: %1").arg(this->ExtensionsSettingsFilePath));
     return;
     }
+  qSlicerCoreApplication* app = qSlicerCoreApplication::application();
 
-  QStringList libraryPath = qSlicerExtensionsManagerModel::readArrayValues(settings, "LibraryPaths", "path");
+  QStringList libraryPath = app->toSlicerHomeAbsolutePaths(qSlicerExtensionsManagerModel::readArrayValues(settings, "LibraryPaths", "path"));
   qSlicerExtensionsManagerModel::writeArrayValues(settings,
-                         removeFromPathList(libraryPath, this->extensionLibraryPaths(extensionName)),
+                         app->toSlicerHomeRelativePaths(removeFromPathList(libraryPath, this->extensionLibraryPaths(extensionName))),
                          "LibraryPaths", "path");
 
-  QStringList paths = qSlicerExtensionsManagerModel::readArrayValues(settings, "Paths", "path");
+  QStringList paths = app->toSlicerHomeAbsolutePaths(qSlicerExtensionsManagerModel::readArrayValues(settings, "Paths", "path"));
   qSlicerExtensionsManagerModel::writeArrayValues(settings,
-                         removeFromPathList(paths, this->extensionPaths(extensionName)),
+                         app->toSlicerHomeRelativePaths(removeFromPathList(paths, this->extensionPaths(extensionName))),
                          "Paths", "path");
 
 #ifdef Slicer_USE_PYTHONQT
-  QStringList pythonPaths = qSlicerExtensionsManagerModel::readArrayValues(settings, "PYTHONPATH", "path");
+  QStringList pythonPaths = app->toSlicerHomeAbsolutePaths(qSlicerExtensionsManagerModel::readArrayValues(settings, "PYTHONPATH", "path"));
   qSlicerExtensionsManagerModel::writeArrayValues(settings,
-                         removeFromPathList(pythonPaths, this->extensionPythonPaths(extensionName)),
+                         app->toSlicerHomeRelativePaths(removeFromPathList(pythonPaths, this->extensionPythonPaths(extensionName))),
                          "PYTHONPATH", "path");
 #endif
 
-  QStringList qtPluginPaths = qSlicerExtensionsManagerModel::readArrayValues(settings, "QT_PLUGIN_PATH", "path");
+  QStringList qtPluginPaths = app->toSlicerHomeAbsolutePaths(qSlicerExtensionsManagerModel::readArrayValues(settings, "QT_PLUGIN_PATH", "path"));
   qSlicerExtensionsManagerModel::writeArrayValues(settings,
-                         removeFromPathList(qtPluginPaths, this->extensionQtPluginPaths(extensionName)),
+                         app->toSlicerHomeRelativePaths(removeFromPathList(qtPluginPaths, this->extensionQtPluginPaths(extensionName))),
                          "QT_PLUGIN_PATH", "path");
 }
 
@@ -929,7 +942,7 @@ QVariantMap qSlicerExtensionsManagerModelPrivate::getExtensionsInfoFromPreviousI
         }
       curExtensionInfo.insert("IsInstalled", q->isExtensionInstalled(extensionName));
       bool isCompatible = true;
-
+      QString description;
       if (!q->isExtensionInstalled(extensionName))
         {
         qMidasAPI::ParametersType parameters;
@@ -938,15 +951,18 @@ QVariantMap qSlicerExtensionsManagerModelPrivate::getExtensionsInfoFromPreviousI
         parameters["os"] = q->slicerOs();
         parameters["arch"] = q->slicerArch();
         const ExtensionMetadataType& metaData = retrieveExtensionMetadata(parameters);
+        description = metaData.value("description").toString();
         extensionId = metaData.value("extension_id").toString();     //retrieve updated extension id for not installed extensions
         isCompatible = (this->isExtensionCompatible(metaData, this->SlicerRevision, this->SlicerOs, this->SlicerArch).length() == 0);
         }
       else
         {
         const ExtensionMetadataType& metaData = q->extensionMetadata(extensionName);
+        description = metaData.value("description").toString();
         extensionId = metaData.value("extension_id").toString();
         isCompatible = (q->isExtensionCompatible(extensionName).length() == 0);
         }
+      curExtensionInfo.insert("Description", description);
       curExtensionInfo.insert("ExtensionId", extensionId);
       curExtensionInfo.insert("IsCompatible", isCompatible);
       extensionsHistoryInformation.insert(extensionName, curExtensionInfo);
@@ -975,20 +991,70 @@ qSlicerExtensionsManagerModel::ExtensionMetadataType qSlicerExtensionsManagerMod
 {
   Q_Q(const qSlicerExtensionsManagerModel);
 
-  bool ok = false;
-  QList<QVariantMap> results = qMidasAPI::synchronousQuery(
-        ok, q->serverUrl().toString(),
-        "midas.slicerpackages.extension.list", parameters);
-  if (!ok || results.count() != 1)
-    {
-    this->critical(results[0]["queryError"].toString());
-    return ExtensionMetadataType();
-    }
-  ExtensionMetadataType result = results.at(0);
+  ExtensionMetadataType result;
 
-  if (!qSlicerExtensionsManagerModelPrivate::validateExtensionMetadata(result))
+  QString midasResponseCacheKey = q->serverUrl().toString();
+  foreach(const QString & parametersName, parameters.keys())
     {
-    return ExtensionMetadataType();
+    midasResponseCacheKey += ";" + parameters[parametersName];
+    }
+  if (this->MidasResponseCache.contains(midasResponseCacheKey))
+    {
+    result = this->MidasResponseCache[midasResponseCacheKey];
+    }
+  else
+    {
+    this->GetExtensionMetadataApi.setServerUrl(q->serverUrl().toString());
+    int maxWaitingTimeInMSecs = 2500;
+    this->GetExtensionMetadataApi.setTimeOut(maxWaitingTimeInMSecs);
+    QUuid queryUuid = this->GetExtensionMetadataApi.get("midas.slicerpackages.extension.list", parameters);
+
+    QScopedPointer<qRestResult> restResult(this->GetExtensionMetadataApi.takeResult(queryUuid));
+    QString errorText; // if any error occurs then this will be set to non-empty
+    if(restResult)
+      {
+      QList<QVariantMap> results = restResult->results();
+      // extension manager returned OK
+      if (results.count() == 0)
+        {
+        // Extension information not found.
+        // Not an error (it means that extension is not available for the
+        // specific revision and operating system), just return an empty result.
+        }
+      else if (results.count() == 1)
+        {
+        // extension manager returned 1 result, we can use this
+        result = results.at(0);
+        if (!qSlicerExtensionsManagerModelPrivate::validateExtensionMetadata(result))
+          {
+          errorText = "invalid response received";
+          }
+        }
+      else
+        {
+        // extension manager returned multiple results, this is not expected, do not use the results
+        errorText = QString("expected 1 results, received %1").arg(results.count());
+        }
+      }
+    else
+      {
+      if (this->GetExtensionMetadataApi.error() == qRestAPI::UnknownError)
+        {
+        errorText = "unknown error";
+        }
+      else
+        {
+        errorText = this->GetExtensionMetadataApi.errorString();
+        }
+      }
+    if (!errorText.isEmpty())
+      {
+      this->critical(QString("Error retrieving extension metadata: %1 (%2)")
+        .arg(parameters.values().join(", "))
+        .arg(errorText));
+      return ExtensionMetadataType();
+      }
+    this->MidasResponseCache[midasResponseCacheKey] = result;
     }
 
   ExtensionMetadataType updatedExtensionMetadata;
@@ -1045,7 +1111,7 @@ QUrl qSlicerExtensionsManagerModel::serverUrlWithExtensionsStorePath()const
 QString qSlicerExtensionsManagerModel::extensionsInstallPath()const
 {
   QSettings settings(this->extensionsSettingsFilePath(), QSettings::IniFormat);
-  return settings.value("Extensions/InstallPath").toString();
+  return qSlicerCoreApplication::application()->toSlicerHomeAbsolutePath(settings.value("Extensions/InstallPath").toString());
 }
 
 // --------------------------------------------------------------------------
@@ -1142,10 +1208,16 @@ bool qSlicerExtensionsManagerModel::isExtensionInstalled(const QString& extensio
 }
 
 // --------------------------------------------------------------------------
-int qSlicerExtensionsManagerModel::numberOfInstalledExtensions()const
+int qSlicerExtensionsManagerModel::installedExtensionsCount()const
 {
   Q_D(const qSlicerExtensionsManagerModel);
   return d->Model.rowCount();
+}
+
+// --------------------------------------------------------------------------
+int qSlicerExtensionsManagerModel::numberOfInstalledExtensions()const
+{
+  return this->installedExtensionsCount();
 }
 
 // --------------------------------------------------------------------------
@@ -1326,6 +1398,7 @@ qSlicerExtensionsManagerModelPrivate::downloadExtension(
     this->NetworkManager.get(QNetworkRequest(downloadUrl));
   qSlicerExtensionDownloadTask* const task =
     new qSlicerExtensionDownloadTask(reply);
+  this->ActiveTasks[task] = QString("install %1 extension").arg(extensionMetadata["extensionname"].toString());
 
   task->setMetadata(extensionMetadata);
   emit q->downloadStarted(reply);
@@ -1384,6 +1457,7 @@ void qSlicerExtensionsManagerModel::onInstallDownloadFinished(
   if (reply->error())
     {
     d->critical(QString("Failed downloading: %1").arg(downloadUrl.toString()));
+    d->ActiveTasks.remove(task);
     return;
     }
 
@@ -1393,6 +1467,7 @@ void qSlicerExtensionsManagerModel::onInstallDownloadFinished(
   if (!file.open())
     {
     d->critical(QString("Could not create temporary file for writing: %1").arg(file.errorString()));
+    d->ActiveTasks.remove(task);
     return;
     }
   file.write(reply->readAll());
@@ -1400,6 +1475,7 @@ void qSlicerExtensionsManagerModel::onInstallDownloadFinished(
   const ExtensionMetadataType& extensionMetadata =
     this->filterExtensionMetadata(task->metadata());
   this->installExtension(extensionName, extensionMetadata, file.fileName());
+  d->ActiveTasks.remove(task);
 }
 
 // --------------------------------------------------------------------------
@@ -1793,6 +1869,7 @@ void qSlicerExtensionsManagerModel::onUpdateDownloadFinished(
   if (reply->error())
     {
     d->critical("Failed downloading: " + downloadUrl.toString());
+    d->ActiveTasks.remove(task);
     return;
     }
 
@@ -1808,6 +1885,7 @@ void qSlicerExtensionsManagerModel::onUpdateDownloadFinished(
     if (!QDir(this->extensionsInstallPath()).mkpath(".updates"))
       {
       d->critical("Could not create directory for update archive");
+      d->ActiveTasks.remove(task);
       return;
       }
 
@@ -1826,6 +1904,7 @@ void qSlicerExtensionsManagerModel::onUpdateDownloadFinished(
     if (!file.open(QIODevice::WriteOnly | QIODevice::Truncate))
       {
       d->critical("Could not create file for writing: " + file.errorString());
+      d->ActiveTasks.remove(task);
       return;
       }
 
@@ -1836,6 +1915,7 @@ void qSlicerExtensionsManagerModel::onUpdateDownloadFinished(
     iter->ArchiveName = archivePath;
     this->scheduleExtensionForUpdate(extensionName);
     }
+  d->ActiveTasks.remove(task);
 }
 
 // --------------------------------------------------------------------------
@@ -2643,4 +2723,11 @@ QStringList qSlicerExtensionsManagerModel::checkInstallPrerequisites() const
     errors << error;
     }
   return errors;
+}
+
+// --------------------------------------------------------------------------
+QStringList qSlicerExtensionsManagerModel::activeTasks() const
+{
+  Q_D(const qSlicerExtensionsManagerModel);
+  return d->ActiveTasks.values();
 }

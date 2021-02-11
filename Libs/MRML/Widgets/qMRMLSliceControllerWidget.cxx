@@ -194,7 +194,7 @@ void qMRMLSliceControllerWidgetPrivate::setupPopupUi()
   QObject::connect(this->actionFit_to_window, SIGNAL(triggered()),
                    q, SLOT(fitSliceToBackground()));
   QObject::connect(this->actionRotate_to_volume_plane, SIGNAL(triggered()),
-                   q, SLOT(rotateSliceToBackground()));
+                   q, SLOT(rotateSliceToLowestVolumeAxes()));
   QObject::connect(this->actionShow_reformat_widget, SIGNAL(triggered(bool)),
                    q, SLOT(showReformatWidget(bool)));
   QObject::connect(this->actionCompositingAlpha_blend, SIGNAL(triggered()),
@@ -436,8 +436,6 @@ void qMRMLSliceControllerWidgetPrivate::init()
 
   vtkNew<vtkMRMLSliceLogic> defaultLogic;
   q->setSliceLogic(defaultLogic.GetPointer());
-
-  q->setSliceViewName("Red");
 }
 
 // --------------------------------------------------------------------------
@@ -851,10 +849,16 @@ void qMRMLSliceControllerWidgetPrivate::updateSliceOrientationSelector(
 // --------------------------------------------------------------------------
 void qMRMLSliceControllerWidgetPrivate::updateWidgetFromMRMLSliceNode()
 {
+  Q_Q(qMRMLSliceControllerWidget);
+
   if (!this->MRMLSliceNode)
     {
     return;
     }
+
+  double* layoutColorVtk = this->MRMLSliceNode->GetLayoutColor();
+  QColor layoutColor = QColor::fromRgbF(layoutColorVtk[0], layoutColorVtk[1], layoutColorVtk[2]);
+  this->setColor(layoutColor);
 
   bool wasBlocked;
 
@@ -993,7 +997,10 @@ void qMRMLSliceControllerWidgetPrivate::updateWidgetFromMRMLSliceCompositeNode()
     // the volumes pointed by the slice composite node don't exist yet
     return;
     }
-  Q_ASSERT(this->MRMLSliceCompositeNode);
+  if (!this->MRMLSliceCompositeNode)
+    {
+    return;
+    }
 
   bool wasBlocked;
 
@@ -1256,29 +1263,30 @@ void qMRMLSliceControllerWidgetPrivate::onSliceLogicModifiedEvent()
   bool wasBlocking = this->SliceOffsetSlider->blockSignals(true);
 
   // Set slice offset range to match the field of view
-  // Calculate the number of slices in the current range
+  // Calculate the number of slices in the current range.
+  // Extent is between the farthest voxel centers (not voxel sides).
   double sliceBounds[6] = {0, -1, 0, -1, 0, -1};
-  this->SliceLogic->GetLowestVolumeSliceBounds(sliceBounds);
-  if (sliceBounds[4] <= sliceBounds[5])
+  this->SliceLogic->GetLowestVolumeSliceBounds(sliceBounds, true);
+
+  const double * sliceSpacing = this->SliceLogic->GetLowestVolumeSliceSpacing();
+  Q_ASSERT(sliceSpacing);
+  double offsetResolution = sliceSpacing ? sliceSpacing[2] : 1.0;
+
+  bool singleSlice = ((sliceBounds[5] - sliceBounds[4]) < offsetResolution);
+  if (singleSlice)
     {
-    q->setSliceOffsetRange(sliceBounds[4], sliceBounds[5]);
+    // add one blank slice before and after the current slice to make the slider appear in the center when
+    // we are centered on the slice
+    double centerPos = (sliceBounds[4] + sliceBounds[5]) / 2.0;
+    q->setSliceOffsetRange(centerPos - offsetResolution, centerPos + offsetResolution);
     }
   else
     {
-    q->setSliceOffsetRange(this->SliceLogic->GetSliceOffset(), this->SliceLogic->GetSliceOffset());
+    // there are at least two slices in the range
+    q->setSliceOffsetRange(sliceBounds[4], sliceBounds[5]);
     }
 
   // Set the scale increments to match the z spacing (rotated into slice space)
-  const double* sliceSpacing = this->SliceLogic->GetLowestVolumeSliceSpacing();
-  Q_ASSERT(sliceSpacing);
-  double offsetResolution = sliceSpacing ? sliceSpacing[2] : 0;
-  // For thin volumes such as ultrasound, the slice bounds may be smaller than the spacing due to floating point errors.
-  // To avoid warnings caused by the step size being larger than the slider maximum, set the step size to the smaller of
-  // the either the slice offset or the slice bounds depth.
-  if (sliceBounds[5] - sliceBounds[4] > 0.0)
-    {
-    offsetResolution = std::min(offsetResolution, sliceBounds[5] - sliceBounds[4]);
-    }
   q->setSliceOffsetResolution(offsetResolution);
 
   // Update slider position
@@ -1586,7 +1594,6 @@ void qMRMLSliceControllerWidgetPrivate::onSegmentVisibilitySelectionChanged(QStr
 
 //---------------------------------------------------------------------------
 CTK_GET_CPP(qMRMLSliceControllerWidget, vtkMRMLSliceLogic*, sliceLogic, SliceLogic);
-CTK_GET_CPP(qMRMLSliceControllerWidget, QString, sliceViewName, SliceViewName);
 CTK_GET_CPP(qMRMLSliceControllerWidget, vtkAlgorithmOutput*, imageDataConnection, ImageDataConnection);
 CTK_GET_CPP(qMRMLSliceControllerWidget, vtkMRMLSliceCompositeNode*,
             mrmlSliceCompositeNode, MRMLSliceCompositeNode);
@@ -1761,84 +1768,30 @@ void qMRMLSliceControllerWidget::setSliceViewSize(const QSize& newSize)
 }
 
 //---------------------------------------------------------------------------
+QString qMRMLSliceControllerWidget::sliceViewName() const
+{
+  Q_D(const qMRMLSliceControllerWidget);
+
+  if (!d->MRMLSliceNode)
+    {
+    qCritical() << "qMRMLSliceControllerWidget::setSliceViewName failed: MRMLSliceNode is invalid";
+    return QString();
+    }
+  return QString::fromUtf8(d->MRMLSliceNode->GetLayoutName());
+}
+
+//---------------------------------------------------------------------------
 void qMRMLSliceControllerWidget::setSliceViewName(const QString& newSliceViewName)
 {
   Q_D(qMRMLSliceControllerWidget);
 
-  if (d->MRMLSliceNode)
+  if (!d->MRMLSliceNode)
     {
-    qCritical() << "qMRMLSliceControllerWidget::setSliceViewName should be called before setMRMLSliceNode !";
+    qCritical() << "qMRMLSliceControllerWidget::setSliceViewName failed: MRMLSliceNode is invalid";
     return;
     }
 
-  if (d->SliceViewName == newSliceViewName)
-    {
-    return;
-    }
-
-  // Colors are now first class properties not derived from the
-  // name...
-
-  // // If name matches either 'Red, 'Green' or 'Yellow' set the
-  // // corresponding color (legacy colors). If the name matches an SVG color keyword
-  // // http://www.w3.org/TR/SVG/types.html#ColorKeywords, then use that.
-  // // Set Orange otherwise.
-  // QColor barColor = qMRMLSliceControllerWidget::sliceViewColor(newSliceViewName);
-  // d->setColor(barColor);
-
-  if (d->SliceLogic)
-    {
-    d->SliceLogic->SetName(newSliceViewName.toUtf8());
-    }
-
-  d->SliceViewName = newSliceViewName;
-}
-
-//---------------------------------------------------------------------------
-QColor qMRMLSliceControllerWidget::sliceViewColor(const QString& sliceViewName)
-{
-  // We try to use SVG named colors directly. However, the Slicer Red,
-  // Green, Yellow colors do not match the SVG red, green, yellow. So
-  // we use the Slicer colors instead. It would nice to use the Qt 4.7
-  // static method QColor::isValidColor() but that is not available in
-  // earlier versions of Qt. Instead, we could just try setting the
-  // color and checking whether isValid() is true but setting an
-  // invalid color emits a warning in debug builds. So we fall back to
-  // searching for the color in the list of colorNames(). Note that
-  // this is slightly different that isValidColor() as isValidColor()
-  // would also check RGB dynamic range in the #RRGGBBB style
-  // formats.
-  QColor color;
-  if (sliceViewName == "Red")
-    {
-    color = qMRMLColors::sliceRed();
-    }
-  else if (sliceViewName == "Green")
-    {
-    color = qMRMLColors::sliceGreen();
-    }
-  else if (sliceViewName == "Yellow")
-    {
-    color =  qMRMLColors::sliceYellow();
-    }
-  else if (sliceViewName.startsWith("Compare"))
-    {
-    color = qMRMLColors::sliceOrange();
-    }
-  else if (sliceViewName.startsWith("Slice"))
-    {
-    color = qMRMLColors::sliceGray();
-    }
-  else if (QColor::colorNames().contains(sliceViewName, Qt::CaseInsensitive))
-    {
-    // This conditional should really have been "if (QColor::isValidColor(sliceViewName.toLower()))"
-    color = QColor(sliceViewName.toLower());
-    }
-  else
-    {
-    color = qMRMLColors::sliceGray();
-    }
-  return color;
+  d->MRMLSliceNode->SetLayoutName(newSliceViewName.toUtf8().constData());
 }
 
 //---------------------------------------------------------------------------
@@ -1847,6 +1800,7 @@ void qMRMLSliceControllerWidget::setSliceViewLabel(const QString& newSliceViewLa
   Q_D(qMRMLSliceControllerWidget);
   if (!d->MRMLSliceNode)
     {
+    qCritical() << "qMRMLSliceControllerWidget::setSliceViewLabel failed: MRMLSliceNode is invalid";
     return;
     }
   d->MRMLSliceNode->SetLayoutLabel(newSliceViewLabel.toUtf8());
@@ -1863,14 +1817,13 @@ QString qMRMLSliceControllerWidget::sliceViewLabel()const
 void qMRMLSliceControllerWidget::setSliceViewColor(const QColor& newSliceViewColor)
 {
   Q_D(qMRMLSliceControllerWidget);
-
-  if (d->MRMLSliceNode)
+  if (!d->MRMLSliceNode)
     {
-    qCritical() << "qMRMLSliceControllerWidget::setSliceViewColor should be called before setMRMLSliceNode";
+    qCritical() << "qMRMLSliceControllerWidget::setSliceViewName failed: MRMLSliceNode is invalid";
     return;
     }
-
-  d->setColor(newSliceViewColor);
+  // this will update the widget color
+  d->MRMLSliceNode->SetLayoutColor(newSliceViewColor.redF(), newSliceViewColor.greenF(), newSliceViewColor.blueF());
 }
 
 //---------------------------------------------------------------------------
@@ -2123,7 +2076,7 @@ void qMRMLSliceControllerWidget::moveBackgroundComboBox(bool more)
 }
 
 //---------------------------------------------------------------------------
-void qMRMLSliceControllerWidget::rotateSliceToBackground()
+void qMRMLSliceControllerWidget::rotateSliceToLowestVolumeAxes()
 {
   Q_D(qMRMLSliceControllerWidget);
   vtkSmartPointer<vtkCollection> nodes = d->saveNodesForUndo("vtkMRMLSliceNode");
@@ -2131,19 +2084,9 @@ void qMRMLSliceControllerWidget::rotateSliceToBackground()
     {
     return;
     }
-  vtkMRMLSliceNode* node = nullptr;
-  vtkCollectionSimpleIterator it;
-  for (nodes->InitTraversal(it);(node = static_cast<vtkMRMLSliceNode*>(
-                                   nodes->GetNextItemAsObject(it)));)
-    {
-    vtkMRMLSliceLogic* nodeLogic = d->sliceNodeLogic(node);
-    if (nodeLogic && (nodeLogic == d->SliceLogic.GetPointer() || this->isLinked()))
-      {
-      vtkMRMLVolumeNode* backgroundNode = nodeLogic->GetLayerVolumeNode(0);
-      node->RotateToVolumePlane(backgroundNode);
-      nodeLogic->SnapSliceOffsetToIJK();
-      }
-    }
+  d->SliceLogic->StartSliceNodeInteraction(vtkMRMLSliceNode::RotateToBackgroundVolumePlaneFlag);
+  d->SliceLogic->RotateSliceToLowestVolumeAxes();
+  d->SliceLogic->EndSliceNodeInteraction();
 }
 
 //---------------------------------------------------------------------------

@@ -9,6 +9,7 @@ if(NOT Slicer_USE_SYSTEM_python)
   list(APPEND ${proj}_DEPENDENCIES
     bzip2
     CTKAPPLAUNCHER
+    LZMA
     zlib
     sqlite
     )
@@ -88,6 +89,11 @@ if((NOT DEFINED PYTHON_INCLUDE_DIR
         -DBUILTIN_BINASCII:BOOL=OFF
         -DBUILTIN_ZLIB:BOOL=OFF
       )
+  elseif(UNIX)
+    list(APPEND EXTERNAL_PROJECT_OPTIONAL_CMAKE_ARGS
+        # Avoid segfault on Linux distributions including an incompatible version of libffi
+        -DBUILTIN_CTYPES:BOOL=ON
+      )
   endif()
 
   # Force python build to "Release"
@@ -113,7 +119,7 @@ if((NOT DEFINED PYTHON_INCLUDE_DIR
 
   ExternalProject_SetIfNotDefined(
     Slicer_${proj}_GIT_TAG
-    "a1ce7c2cf346ce62648d8c3e9e5cae7f655d4309"
+    "dca8bee81e29b452560bd969d67e7d08237e23d6"
     QUIET
     )
 
@@ -148,6 +154,8 @@ if((NOT DEFINED PYTHON_INCLUDE_DIR
       -DINSTALL_WINDOWS_TRADITIONAL:BOOL=OFF
       -DBZIP2_INCLUDE_DIR:PATH=${BZIP2_INCLUDE_DIR}
       -DBZIP2_LIBRARIES:FILEPATH=${BZIP2_LIBRARIES}
+      -DLZMA_INCLUDE_PATH:PATH=${LZMA_INCLUDE_DIR}
+      -DLZMA_LIBRARY:FILEPATH=${LZMA_LIBRARY}
       -DZLIB_INCLUDE_DIR:PATH=${ZLIB_INCLUDE_DIR}
       -DZLIB_LIBRARY:FILEPATH=${ZLIB_LIBRARY}
       -DSQLITE3_LIBRARY:FILEPATH=${sqlite_LIBRARY}
@@ -390,6 +398,32 @@ if(WIN32)
   mark_as_superbuild(VARS PYTHON_DEBUG_LIBRARY LABELS "FIND_PACKAGE")
   ExternalProject_Message(${proj} "PYTHON_DEBUG_LIBRARY:${PYTHON_DEBUG_LIBRARY}")
 endif()
+
+# Variable expected by FindPython3 CMake module
+set(Python3_ROOT_DIR ${python_DIR})
+set(Python3_INCLUDE_DIR ${PYTHON_INCLUDE_DIR})
+set(Python3_LIBRARY ${PYTHON_LIBRARY})
+set(Python3_LIBRARY_DEBUG ${PYTHON_LIBRARY})
+set(Python3_LIBRARY_RELEASE ${PYTHON_LIBRARY})
+set(Python3_EXECUTABLE ${PYTHON_EXECUTABLE})
+
+mark_as_superbuild(
+  VARS
+    Python3_ROOT_DIR:PATH
+    Python3_INCLUDE_DIR:PATH
+    Python3_LIBRARY:FILEPATH
+    Python3_LIBRARY_DEBUG:FILEPATH
+    Python3_LIBRARY_RELEASE:FILEPATH
+    Python3_EXECUTABLE:FILEPATH
+  LABELS "FIND_PACKAGE"
+  )
+
+ExternalProject_Message(${proj} "Python3_ROOT_DIR:${Python3_ROOT_DIR}")
+ExternalProject_Message(${proj} "Python3_INCLUDE_DIR:${Python3_INCLUDE_DIR}")
+ExternalProject_Message(${proj} "Python3_LIBRARY:${Python3_LIBRARY}")
+ExternalProject_Message(${proj} "Python3_LIBRARY_DEBUG:${Python3_LIBRARY_DEBUG}")
+ExternalProject_Message(${proj} "Python3_LIBRARY_RELEASE:${Python3_LIBRARY_RELEASE}")
+ExternalProject_Message(${proj} "Python3_EXECUTABLE:${Python3_EXECUTABLE}")
 
 #!
 #! ExternalProject_PythonModule_InstallTreeCleanup(<proj> <modname> "[<dirname1>;[<dirname2>;[...]]]"))

@@ -20,10 +20,13 @@
 
 // Qt includes
 #include <QDebug>
+#include <QDropEvent>
 #include <QEvent>
 #include <QFileInfo>
 #include <QHBoxLayout>
+#include <QMimeData>
 #include <QToolButton>
+#include <QUrl>
 
 // CTK includes
 #include <ctkAxesWidget.h>
@@ -33,6 +36,7 @@
 // qMRML includes
 #include "qMRMLColors.h"
 #include "qMRMLSliceView_p.h"
+#include "qMRMLUtils.h"
 
 // MRMLDisplayableManager includes
 #include <vtkMRMLAbstractDisplayableManager.h>
@@ -44,8 +48,13 @@
 #include <vtkMRMLSliceViewInteractorStyle.h>
 
 // MRML includes
+#include <vtkMRMLLabelMapVolumeNode.h>
+#include <vtkMRMLSliceCompositeNode.h>
 #include <vtkMRMLSliceNode.h>
 #include <vtkMRMLScene.h>
+#include <vtkMRMLSliceLogic.h>
+#include <vtkMRMLSubjectHierarchyNode.h>
+#include <vtkMRMLVolumeNode.h>
 
 // VTK includes
 #include <vtkCollection.h>
@@ -54,6 +63,7 @@
 #include <vtkRenderWindow.h>
 #include <vtkRenderWindowInteractor.h>
 #include <vtkSmartPointer.h>
+#include <vtkVersionMacros.h>
 
 //--------------------------------------------------------------------------
 // qMRMLSliceViewPrivate::vtkInternalLightBoxRendererManagerProxy class
@@ -265,6 +275,7 @@ qMRMLSliceView::qMRMLSliceView(QWidget* _parent) : Superclass(_parent)
 {
   Q_D(qMRMLSliceView);
   d->init();
+  setAcceptDrops(true);
 }
 
 // --------------------------------------------------------------------------
@@ -331,9 +342,10 @@ void qMRMLSliceView::setMRMLSliceNode(vtkMRMLSliceNode* newSliceNode)
     vtkCommand::ModifiedEvent, d, SLOT(updateWidgetFromMRML()));
 
   d->MRMLSliceNode = newSliceNode;
+  d->updateWidgetFromMRML();
+
   d->DisplayableManagerGroup->SetMRMLDisplayableNode(newSliceNode);
 
-  d->updateWidgetFromMRML();
   // Enable/disable widget
   this->setEnabled(newSliceNode != nullptr);
 }
@@ -432,35 +444,74 @@ QList<double> qMRMLSliceView::convertXYZToRAS(const QList<double>& xyz)const
 void qMRMLSliceView::setViewCursor(const QCursor &cursor)
 {
   this->setCursor(cursor);
-#if VTK_MAJOR_VERSION >= 9 || (VTK_MAJOR_VERSION >= 8 && VTK_MINOR_VERSION >= 2)
   if (this->VTKWidget() != nullptr)
     {
-    this->VTKWidget()->setQVTKCursor(cursor);
-    }
+#if VTK_MAJOR_VERSION >= 9 || (VTK_MAJOR_VERSION >= 8 && VTK_MINOR_VERSION > 2)
+    this->VTKWidget()->setCursor(cursor);  // TODO: test if cursor settings works
+#elif (VTK_MAJOR_VERSION == 8 && VTK_MINOR_VERSION == 2)
+    this->VTKWidget()->setQVTKCursor(cursor);  // TODO: test if cursor settings works
 #endif
+    }
 }
 
 // --------------------------------------------------------------------------
 void qMRMLSliceView::unsetViewCursor()
 {
   this->unsetCursor();
-#if VTK_MAJOR_VERSION >= 9 || (VTK_MAJOR_VERSION >= 8 && VTK_MINOR_VERSION >= 2)
   if (this->VTKWidget() != nullptr)
     {
     // TODO: it would be better to restore default cursor, but QVTKOpenGLNativeWidget
     // API does not have an accessor method to the default cursor.
-    this->VTKWidget()->setQVTKCursor(QCursor(Qt::ArrowCursor));
-    }
+#if VTK_MAJOR_VERSION >= 9 || (VTK_MAJOR_VERSION >= 8 && VTK_MINOR_VERSION > 2)
+    this->VTKWidget()->setCursor(QCursor(Qt::ArrowCursor));  // TODO: test if cursor settings works
+#elif (VTK_MAJOR_VERSION == 8 && VTK_MINOR_VERSION == 2)
+    this->VTKWidget()->setQVTKCursor(QCursor(Qt::ArrowCursor));  // TODO: test if cursor settings works
 #endif
+    }
 }
 
 // --------------------------------------------------------------------------
 void qMRMLSliceView::setDefaultViewCursor(const QCursor &cursor)
 {
-#if VTK_MAJOR_VERSION >= 9 || (VTK_MAJOR_VERSION >= 8 && VTK_MINOR_VERSION >= 2)
   if (this->VTKWidget() != nullptr)
     {
-    this->VTKWidget()->setDefaultQVTKCursor(cursor);
-    }
+#if VTK_MAJOR_VERSION >= 9 || (VTK_MAJOR_VERSION >= 8 && VTK_MINOR_VERSION > 2)
+    this->VTKWidget()->setDefaultCursor(cursor);  // TODO: test if cursor settings works
+#elif (VTK_MAJOR_VERSION == 8 && VTK_MINOR_VERSION == 2)
+    this->VTKWidget()->setDefaultQVTKCursor(cursor);  // TODO: test if cursor settings works
 #endif
+    }
+}
+
+//---------------------------------------------------------------------------
+void qMRMLSliceView::dragEnterEvent(QDragEnterEvent* event)
+{
+  Q_D(qMRMLSliceView);
+  vtkNew<vtkIdList> shItemIdList;
+  qMRMLUtils::mimeDataToSubjectHierarchyItemIDs(event->mimeData(), shItemIdList);
+  if (shItemIdList->GetNumberOfIds() > 0)
+    {
+    event->accept();
+    return;
+    }
+  Superclass::dragEnterEvent(event);
+}
+
+//-----------------------------------------------------------------------------
+void qMRMLSliceView::dropEvent(QDropEvent* event)
+{
+  Q_D(qMRMLSliceView);
+  vtkNew<vtkIdList> shItemIdList;
+  qMRMLUtils::mimeDataToSubjectHierarchyItemIDs(event->mimeData(), shItemIdList);
+  if (!shItemIdList->GetNumberOfIds())
+    {
+    return;
+    }
+  vtkMRMLSubjectHierarchyNode* shNode = vtkMRMLSubjectHierarchyNode::GetSubjectHierarchyNode(d->MRMLScene);
+  if (!shNode)
+    {
+    qWarning() << Q_FUNC_INFO << " failed: invalid subject hierarchy node";
+    return;
+    }
+  shNode->ShowItemsInView(shItemIdList, this->mrmlSliceNode());
 }

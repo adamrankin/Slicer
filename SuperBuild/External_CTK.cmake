@@ -35,6 +35,19 @@ if(NOT DEFINED CTK_DIR AND NOT Slicer_USE_SYSTEM_${proj})
       -DPYTHON_INCLUDE_DIR:PATH=${PYTHON_INCLUDE_DIR}
       -DPYTHON_EXECUTABLE:FILEPATH=${PYTHON_EXECUTABLE}
       )
+    if(Slicer_VTK_VERSION_MAJOR STREQUAL "9")
+      list(APPEND EXTERNAL_PROJECT_OPTIONAL_CMAKE_CACHE_ARGS
+        # Required by CTK SuperBuild to conditionally pass Python3_* variables
+        -DVTK_PYTHON_VERSION:STRING=3
+        # Required by FindPython3 CMake module used by VTK
+        -DPython3_ROOT_DIR:PATH=${Python3_ROOT_DIR}
+        -DPython3_INCLUDE_DIR:PATH=${Python3_INCLUDE_DIR}
+        -DPython3_LIBRARY:FILEPATH=${Python3_LIBRARY}
+        -DPython3_LIBRARY_DEBUG:FILEPATH=${Python3_LIBRARY_DEBUG}
+        -DPython3_LIBRARY_RELEASE:FILEPATH=${Python3_LIBRARY_RELEASE}
+        -DPython3_EXECUTABLE:FILEPATH=${Python3_EXECUTABLE}
+        )
+    endif()
   endif()
 
   if(Slicer_BUILD_DICOM_SUPPORT)
@@ -57,7 +70,7 @@ if(NOT DEFINED CTK_DIR AND NOT Slicer_USE_SYSTEM_${proj})
 
   ExternalProject_SetIfNotDefined(
     Slicer_${proj}_GIT_TAG
-    "f0bb5d7822dee7214b8458c8e2cfd4ecab756c03"
+    "f670e1d0e513bae9d08257b883aaf669f546053d"
     QUIET
     )
 

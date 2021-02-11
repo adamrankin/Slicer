@@ -4,7 +4,7 @@
 
 Slicer stores all loaded data in a data repository, called the "scene" (or Slicer scene or MRML scene). Each data set, such as an image volume, surface model, or point set, is represented in the scene as a "node".
 
-Slicer provides a large number "modules", each implementing a specific set of functions for creating or manipulating data in the scene. Modules typically do not interact with each other directly: they just all operate on the data nodes in the scene. Slicer package contains over 100 built-in modules and additional modules can be installed by using the Extension Manager.
+Slicer provides a large number "modules", each implementing a specific set of functions for creating or manipulating data in the scene. Modules typically do not interact with each other directly: they just all operate on the data nodes in the scene. Slicer package contains over 100 built-in modules and additional modules can be installed by using the Extensions Manager.
 
 ![](https://github.com/Slicer/Slicer/releases/download/docs-resources/user_interface_main_window.png)
 
@@ -24,7 +24,7 @@ The Layout Toolbar provides a drop-down menu of layouts useful for many types of
 
 - **File**: Functions for loading a previouly saved scene or individual datasets of various types, and for downloading sample datasets from the internet. An option for saving scenes and data is also provided here. **Add Data** allows loading data from files. **DICOM** module is recommended to import data from DICOM files and loading of imported DICOM data. **Save** opens the "Save Data" window, which offers a variety of options for saving all data or selected datasets.
 - **Edit**: Contains an option for showing Application Settings, which allows users to customize appearance and behavior of Slicer, such as modules displayed in the toolbar, application font size, temporary directory location, location of additional Slicer modules to include.
-- **View**: Functions for showing/hiding additional windows and widgets, such as **Extension Manager** for installing extensions from Slicer app store, **Error Log** for checking if the application encountered any potential errors, **Python Interactor** for getting a Python console to interact with the loaded data or modules, **show/hide toolbars**, or **switch view layout**.
+- **View**: Functions for showing/hiding additional windows and widgets, such as **Extensions Manager** for installing extensions from Slicer app store, **Error Log** for checking if the application encountered any potential errors, **Python Interactor** for getting a Python console to interact with the loaded data or modules, **show/hide toolbars**, or **switch view layout**.
 
 ### Toolbar
 
@@ -38,7 +38,33 @@ Toolbar provides quick access to commonly used functions. Individual toolbar pan
 
 ### Status bar
 
-This panel may display application status, such as current operation in progress. Clicking the little **X** icons displays the Erro Log window.
+This panel may display application status, such as current operation in progress. Clicking the little **X** icons displays the Error Log window.
+
+## Review loaded data
+
+Data available in Slicer can be reviewed in the Data module, which can be found on the toolbar or the modules list ![](../../Modules/Loadable/Data/Resources/Icons/SubjectHierarchy.png). More details about the module can be found on the [Slicer wiki](https://www.slicer.org/wiki/Documentation/Nightly/Modules/Data).
+
+The Data module's default Subject hierarchy tab can show the datasets in a tree hierarchy, arranged as patient/study/series as typical in DICOM, or any other folder structure:
+
+![](https://github.com/Slicer/Slicer/releases/download/docs-resources/data_loading_and_saving_subject_hier.png)
+
+The Subject hierarchy view contains numerous built-in functions for all types of data. These functions can be accessed by right-clicking the node in the tree. The list of actions differs for each data type, so it is useful to explore the options.
+
+Medical imaging data comes in various forms and representations, which may confuse people just starting in the field. The following diagram gives a brief overview about the most typical data types encountered when using Slicer, especially in a workflow that involves segmentation.
+
+![](https://github.com/Slicer/Slicer/releases/download/docs-resources/data_loading_and_saving_formats.png)
+
+### Selecting displayed data
+
+Data module's Subject hierarchy tab shows all data sets in the scene. Click the "eye" icon to show/hide an item in all views. Drag-and-drop an item into a view to show it in that view.
+
+![](https://github.com/Slicer/Slicer/releases/download/docs-resources/drag_to_view.gif)
+
+Multiple items can be selected in the subject hierarchy tree using Ctrl-Left-Click or Shift-Left-Click and dragged at once into selected view. If two volumes are dragged into a view at the same time then they will be both shown, blended together.
+
+If a view is displayed only in selected views, you can right-click on the item and select "Show in all views" to quickly show in all views.
+
+If view link is enabled for a slice view then dragging a volume to any of the views will show the volume in all the views in that group.
 
 ## Interacting with views
 
@@ -71,6 +97,8 @@ Window/level can be manually adjusted anytime by clicking on "Adjust window/leve
 
 [![](https://img.youtube.com/vi/u1B0F1KcVsk/0.jpg)](https://youtu.be/u1B0F1KcVsk "Demo video of how to adjust image window/level")
 
+Additional window/level options, presets, intensity histogram, automatic adjustments are available in Display section of [Volumes](modules/volumes) module.
+
 ### 3D View
 
 Displays a rendered 3D view of the scene along with visual references to specify orientation and scale.
@@ -87,22 +115,26 @@ Three default slice views are provided (with Red, Yellow and Green colored bars)
 
 ![](https://github.com/Slicer/Slicer/releases/download/docs-resources/user_interface_slice_view_controls.png)
 
-Slice View Controls: The colored bar across any Slice View shows a pushpin icon on its left. When the mouse rolls over this icon, a panel for configuring the slice view is displayed. The panel is hidden when the mouse moves away. For persistent display of this panel, just click the pushpin icon. For more options, click the double-arrow icon.
+Slice View Controls: The colored bar across any slice view shows a pushpin icon on its left (**Show view controls**). When the mouse rolls over this icon, a panel for configuring the slice view is displayed. The panel is hidden when the mouse moves away. For persistent display of this panel, just click the pushpin icon. For more options, click the double-arrow icon (**Show all options**).
 
 View Controllers module provides an alternate way of displaying these controllers in the Module Panel.
 
 - **Reset field of view** (small square) centers the slice on the current background volume
-- **Link** button synchronizes properties (which volumes are displayed, zoom factor, position of parallel views, opacities, etc.) between all slice views in the same view group. Long-click on the button exposes **hot-linked** option, which controls when properties are synchronized (immediately or when the mouse button is released).
-- **Eye** button in the top row can show the current slice in 3D views. Drop-down menu of the button contains advanced options to customize how this slice is rendered: "...match volume" means that the properties are taken from the full volume, while "...match 2D" means that the properties are copied from the current slice view (for example, copies zoom and pan position). Typically these differences are subtle and the settings can be left at default.
-- **Orientation Selection** displays allows you to choose the orientation for this slice view.
+- **Show in 3D** "eye" button in the top row can show the current slice in 3D views. Drop-down menu of the button contains advanced options to customize how this slice is rendered: "...match volume" means that the properties are taken from the full volume, while "...match 2D" means that the properties are copied from the current slice view (for example, copies zoom and pan position). Typically these differences are subtle and the settings can be left at default.
+- **Slice orientation** displays allows you to choose the orientation for this slice view.
 - **Lightbox** to select a mosiac (a.k.a. contact sheet) view.  Not all operations work in this mode and it may be removed in the future.
 - **Reformat** allows interactive manipulation of the slice orientation.
-- **Blending options** how foreground and background layers are mixed.
-- **Spacing and Field of View** Spacing defines the increment for the slice offset slider.  Field of view sets the zoom level for the slice.
-- **Rotate to Volume Plane** changes the orientation of the slice to match the closest acquisition orientation of the displayed volume
-- **Show Orientation Marker** controls display of human, cube, etc in lower right corner
-- **Ruler** controls display of ruler in slice view
-
+- **Slice offset slider** allows slicing through the volume. Step size is set to the background volume's spacing by default but can be modified by clicking on "Spacing and field of view" button.
+- **Blending mode** specifies how foreground and background layers are mixed.
+- **Spacing and field of view** Spacing defines the increment for the slice offset slider. Field of view sets the zoom level for the slice.
+- **Rotate to volume plane** changes the orientation of the slice to match the closest acquisition orientation of the displayed volume.
+- **Orientation Marker** controls display of human, cube, etc in lower right corner.
+- **Ruler** controls display of ruler in slice view. 
+- **View link** button synchronizes properties (which volumes are displayed, zoom factor, position of parallel views, opacities, etc.) between all slice views in the same view group. Long-click on the button exposes **hot-linked** option, which controls when properties are synchronized (immediately or when the mouse button is released).
+- **Layer visibility** "eye" buttons and **Layer opacity** spinboxes control visibility of segmentations and volumes in the slice view.
+- **Foreground volume opacity** slider allows fading between foreground and background volumes.
+- **Interpolation** allows displaying voxel values without interpolation. Recommended to keep interpolation enabled, and only disable it for testing and troubleshooting.
+- **Node selectors** are used to choose which background, foreground, and labelmap volumes and segmentations to display in this slice view. Note: multiple segmentations can be displayed in a slice view, but slice view controls only allow adjusting visibility of the currently selected segmentation node.
 
 ## Mouse & Keyboard Shortcuts
 
@@ -111,7 +143,6 @@ View Controllers module provides an alternate way of displaying these controller
 | Shortcut | Operation |
 | -------- | --------- |
 | `Ctrl` + `f` | find module by name (hit `Enter` to select) |
-| `Ctrl` + `a` | add data from file |
 | `Ctrl` + `o` | add data from file |
 | `Ctrl` + `s` | save data to files |
 | `Ctrl` + `w` | close scene |
@@ -119,7 +150,7 @@ View Controllers module provides an alternate way of displaying these controller
 | `Ctrl` + `1` | show Application Help |
 | `Ctrl` + `2` | show Application Settings |
 | `Ctrl` + `3` | show/hide Python Interactor |
-| `Ctrl` + `4` | show Extension Manager |
+| `Ctrl` + `4` | show Extensions Manager |
 | `Ctrl` + `5` | show/hide Module Panel |
 | `Ctrl` + `h` | open default startup module (configurable in Application Settings) |
 
@@ -140,6 +171,7 @@ view will not activate the view.
 | `left arrow` / `right arrow` | move to previous/next slice |
 | `b` / `f` | move to previous/next slice |
 | `Shift` + `mouse move` | move crosshair in all views |
+| `Ctrl` + `Alt` + `left-click` + `drag` | rotate slice intersection of other views (`Slice intersections` must be enabled in `Crosshair selection` toolbar) |
 | `v` | toggle slice visibility in 3D view |
 | `r` | reset zoom and pan to default |
 | `g` | toggle segmentation or labelmap volume | | | visibility |

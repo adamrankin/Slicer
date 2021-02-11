@@ -21,6 +21,7 @@
 #include "vtkCurveGenerator.h"
 #include "vtkMRMLMarkupsDisplayNode.h"
 #include "vtkMRMLMarkupsStorageNode.h"
+#include "vtkMRMLStaticMeasurement.h"
 #include "vtkMRMLSelectionNode.h"
 #include "vtkMRMLTransformNode.h"
 #include "vtkMRMLUnitNode.h"
@@ -37,6 +38,7 @@
 #include <vtkBoundingBox.h>
 #include <vtkCallbackCommand.h>
 #include <vtkCellLocator.h>
+#include <vtkCollection.h>
 #include <vtkFrenetSerretFrame.h>
 #include <vtkGeneralTransform.h>
 #include <vtkMatrix4x4.h>
@@ -63,14 +65,7 @@ vtkMRMLNodeNewMacro(vtkMRMLMarkupsNode);
 vtkMRMLMarkupsNode::vtkMRMLMarkupsNode()
 {
   this->TextList = vtkSmartPointer<vtkStringArray>::New();
-  this->Locked = 0;
 
-  this->CurveClosed = false;
-
-  this->RequiredNumberOfControlPoints = 0;
-  this->MaximumNumberOfControlPoints = 0;
-  this->MarkupLabelFormat = std::string("%N-%d");
-  this->LastUsedControlPointNumber = 0;
   this->CenterPos.Set(0,0,0);
 
   this->CurveInputPoly = vtkSmartPointer<vtkPolyData>::New();
@@ -97,7 +92,7 @@ vtkMRMLMarkupsNode::vtkMRMLMarkupsNode()
   this->InteractionHandleToWorldMatrix = vtkSmartPointer<vtkMatrix4x4>::New();
   this->ContentModifiedEvents->InsertNextValue(vtkMRMLMarkupsNode::PointModifiedEvent);
 
-  this->IsUpdatingPoints = false;
+  this->Measurements = vtkCollection::New();
 }
 
 //----------------------------------------------------------------------------
@@ -105,6 +100,12 @@ vtkMRMLMarkupsNode::~vtkMRMLMarkupsNode()
 {
   this->CurveGenerator->RemoveObserver(this->MRMLCallbackCommand);
   this->RemoveAllControlPoints();
+
+  if (this->Measurements)
+    {
+    this->Measurements->Delete();
+    this->Measurements = nullptr;
+    }
 }
 
 //----------------------------------------------------------------------------
@@ -131,7 +132,7 @@ void vtkMRMLMarkupsNode::ReadXMLAttributes(const char** atts)
   int disabledModify = this->StartModify();
 
   this->RemoveAllControlPoints();
-  this->RemoveAllMeasurements();
+  this->ClearValueForAllMeasurements();
 
   Superclass::ReadXMLAttributes(atts);
 
@@ -667,13 +668,6 @@ bool vtkMRMLMarkupsNode::InsertControlPoint(ControlPoint *controlPoint, int targ
     controlPoint->ID = this->GenerateUniqueControlPointID();
     }
 
-  /* do not generate labels for inserted points
-  if (controlPoint->Label.empty())
-    {
-    controlPoint->Label = this->GenerateControlPointLabel(targetIndex);
-    }
-    */
-
   int listSize = this->GetNumberOfControlPoints();
   int destIndex = targetIndex;
   if (targetIndex < 0)
@@ -796,6 +790,7 @@ void vtkMRMLMarkupsNode::SetNthControlPointPosition(const int pointIndex,
 
   // TODO: return if no modification
   double* controlPointPosition = controlPoint->Position;
+
   controlPointPosition[0] = x;
   controlPointPosition[1] = y;
   controlPointPosition[2] = z;
@@ -820,7 +815,13 @@ void vtkMRMLMarkupsNode::SetNthControlPointPosition(const int pointIndex,
     this->InvokeCustomModifiedEvent(vtkMRMLMarkupsNode::PointPositionUndefinedEvent, static_cast<void*>(&n));
     }
   this->StorableModifiedTime.Modified();
+
   this->UpdateMeasurements();
+
+  if (this->GetDisplayNode())
+    {
+    this->GetDisplayNode()->UpdateScalarRange();
+    }
 }
 
 //-----------------------------------------------------------
@@ -1354,11 +1355,7 @@ WriteCLI(std::vector<std::string>& commandLine, std::string prefix,
   int numControlPoints = this->GetNumberOfControlPoints();
 
   // check if the coordinate system flag is set to LPS, otherwise assume RAS
-  bool useLPS = false;
-  if (coordinateSystem == 1)
-    {
-    useLPS = true;
-    }
+  bool useLPS = (coordinateSystem == vtkMRMLStorageNode::CoordinateSystemLPS);
 
   // loop over the control points
   for (int m = 0; m < numControlPoints; m++)
@@ -1914,7 +1911,25 @@ bool vtkMRMLMarkupsNode::SetControlPointLabelsWorld(vtkStringArray* labels, vtkP
 //---------------------------------------------------------------------------
 int vtkMRMLMarkupsNode::GetNumberOfMeasurements()
 {
-  return static_cast<int>(this->Measurements.size());
+  return static_cast<int>(this->Measurements->GetNumberOfItems());
+}
+
+//---------------------------------------------------------------------------
+int vtkMRMLMarkupsNode::GetNumberOfEnabledMeasurements()
+{
+  int numberOfEnabledMeasurements = 0;
+  vtkMRMLMeasurement* currentMeasurement = nullptr;
+  vtkCollectionSimpleIterator it;
+  for (this->Measurements->InitTraversal(it);
+      (currentMeasurement=vtkMRMLMeasurement::SafeDownCast(this->Measurements->GetNextItemAsObject(it)));)
+    {
+    if (currentMeasurement->GetEnabled())
+      {
+      numberOfEnabledMeasurements++;
+      }
+    }
+
+  return numberOfEnabledMeasurements;
 }
 
 //---------------------------------------------------------------------------
@@ -1924,7 +1939,26 @@ vtkMRMLMeasurement* vtkMRMLMarkupsNode::GetNthMeasurement(int id)
     {
     return nullptr;
     }
-  return this->Measurements[id];
+  return vtkMRMLMeasurement::SafeDownCast(this->Measurements->GetItemAsObject(id));
+}
+
+//---------------------------------------------------------------------------
+vtkMRMLMeasurement* vtkMRMLMarkupsNode::GetMeasurement(const char* name)
+{
+  if (!name)
+    {
+    return nullptr;
+    }
+  for (int measurementIndex = 0; measurementIndex < this->GetNumberOfMeasurements(); measurementIndex++)
+    {
+    vtkMRMLMeasurement* measurement = this->GetNthMeasurement(measurementIndex);
+    if (measurement->GetName() && strcmp(name, measurement->GetName()) == 0)
+      {
+      // found
+      return measurement;
+      }
+    }
+  return nullptr;
 }
 
 //---------------------------------------------------------------------------
@@ -1937,18 +1971,18 @@ void vtkMRMLMarkupsNode::SetNthMeasurement(int id, vtkMRMLMeasurement* measureme
     }
   if (id >= this->GetNumberOfMeasurements())
     {
-    this->Measurements.emplace_back(measurement);
+    this->Measurements->AddItem(measurement);
     }
   else
     {
-    this->Measurements[id] = measurement;
+    this->Measurements->ReplaceItem(id, measurement);
     }
 }
 
 //---------------------------------------------------------------------------
 void vtkMRMLMarkupsNode::AddMeasurement(vtkMRMLMeasurement* measurement)
 {
-  this->Measurements.emplace_back(measurement);
+  this->Measurements->AddItem(measurement);
 }
 
 //---------------------------------------------------------------------------
@@ -1963,15 +1997,20 @@ void vtkMRMLMarkupsNode::SetNthMeasurement(int id,
     vtkErrorMacro("vtkMRMLMarkupsNode::SetNthMeasurement failed: id out of range");
     return;
     }
-  vtkSmartPointer<vtkMRMLMeasurement> measurement;
+  vtkSmartPointer<vtkMRMLStaticMeasurement> measurement;
   if (id >= this->GetNumberOfMeasurements())
     {
-    measurement = vtkSmartPointer<vtkMRMLMeasurement>::New();
-    this->Measurements.push_back(measurement);
+    measurement = vtkSmartPointer<vtkMRMLStaticMeasurement>::New();
+    this->Measurements->AddItem(measurement);
     }
   else
     {
-    measurement = this->Measurements[id];
+    measurement = vtkMRMLStaticMeasurement::SafeDownCast(this->Measurements->GetItemAsObject(id));
+    if (measurement == nullptr)
+      {
+      vtkErrorMacro("SetNthMeasurement: Cannot set non-constant measurement manually (ID: " << id << ")");
+      return;
+      }
     }
   measurement->SetName(name.c_str());
   measurement->SetValue(value);
@@ -1994,13 +2033,27 @@ void vtkMRMLMarkupsNode::RemoveNthMeasurement(int id)
     {
     vtkErrorMacro("vtkMRMLMarkupsNode::RemoveNthMeasurement failed: id out of range");
     }
-  this->Measurements.erase(this->Measurements.begin() + id);
+  this->Measurements->RemoveItem(id);
 }
 
 //---------------------------------------------------------------------------
 void vtkMRMLMarkupsNode::RemoveAllMeasurements()
 {
-  this->Measurements.clear();
+  this->Measurements->RemoveAllItems();
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsNode::ClearValueForAllMeasurements()
+{
+  for (int index=0; index<this->Measurements->GetNumberOfItems(); ++index)
+    {
+    vtkMRMLMeasurement* currentMeasurement = vtkMRMLMeasurement::SafeDownCast(
+      this->Measurements->GetItemAsObject(index) );
+    if (currentMeasurement)
+      {
+      currentMeasurement->ClearValue();
+      }
+    }
 }
 
 //---------------------------------------------------------------------------
@@ -2017,8 +2070,18 @@ void vtkMRMLMarkupsNode::UpdateMeasurements()
 //---------------------------------------------------------------------------
 void vtkMRMLMarkupsNode::UpdateMeasurementsInternal()
 {
-  // child classes override this function to compute measurements
-  this->RemoveAllMeasurements();
+  // Calculate enabled measurements
+  for (int index=0; index<this->Measurements->GetNumberOfItems(); ++index)
+    {
+    vtkMRMLMeasurement* currentMeasurement = vtkMRMLMeasurement::SafeDownCast(this->Measurements->GetItemAsObject(index));
+    if (currentMeasurement && currentMeasurement->GetEnabled() && !currentMeasurement->IsA("vtkMRMLStaticMeasurement"))
+      {
+      currentMeasurement->ClearValue();
+      currentMeasurement->Compute();
+      }
+    }
+
+  this->WriteMeasurementsToDescription();
 }
 
 //---------------------------------------------------------------------------
@@ -2033,6 +2096,7 @@ vtkMRMLUnitNode* vtkMRMLMarkupsNode::GetUnitNode(const char* quantity)
     {
     return nullptr;
     }
+
   vtkMRMLSelectionNode* selectionNode = vtkMRMLSelectionNode::SafeDownCast(
     this->GetScene()->GetNodeByID("vtkMRMLSelectionNodeSingleton"));
   if (!selectionNode)
@@ -2042,31 +2106,51 @@ vtkMRMLUnitNode* vtkMRMLMarkupsNode::GetUnitNode(const char* quantity)
     }
   vtkMRMLUnitNode* unitNode = vtkMRMLUnitNode::SafeDownCast(this->GetScene()->GetNodeByID(
     selectionNode->GetUnitNodeID(quantity)));
-  if (!unitNode)
-    {
-    vtkWarningMacro("vtkMRMLMarkupsNode::GetUnitNode failed: unit node not found by name " << quantity);
-    }
+
+  // Do not log warning if null, because for example there is no 'angle' unit node, and in
+  // that case hundreds of warnings would be thrown in a non erroneous situation.
   return unitNode;
 }
 
 //---------------------------------------------------------------------------
 void vtkMRMLMarkupsNode::WriteMeasurementsToDescription()
 {
-  this->PropertiesLabelText.clear();
-  if (this->GetName())
-    {
-    this->PropertiesLabelText += this->GetName();
-    if (!this->Measurements.empty())
-      {
-      this->PropertiesLabelText += ":";
-      }
-    }
-
+  int numberOfValidMeasurements = 0;
+  std::string properties;
   std::string description;
-  for (std::vector< vtkSmartPointer<vtkMRMLMeasurement> >::iterator measurementIt = this->Measurements.begin();
-    measurementIt != this->Measurements.end(); ++measurementIt)
+  vtkMRMLMeasurement* currentMeasurement = nullptr;
+  vtkCollectionSimpleIterator it;
+  std::string measurementText;
+  for (this->Measurements->InitTraversal(it);
+      (currentMeasurement=vtkMRMLMeasurement::SafeDownCast(this->Measurements->GetNextItemAsObject(it)));)
     {
-    std::string measurementText = (*measurementIt)->GetName() + std::string(": ") + (*measurementIt)->GetValueWithUnitsAsPrintableString();
+    if (!currentMeasurement->GetEnabled() || !currentMeasurement->GetName() || !currentMeasurement->GetValueDefined())
+      {
+      continue;
+      }
+
+    std::string measurementValue = currentMeasurement->GetValueWithUnitsAsPrintableString();
+    if (measurementValue.empty())
+      {
+      continue;
+      }
+    numberOfValidMeasurements++;
+
+    // properties label special cases
+    if (numberOfValidMeasurements == 1)
+      {
+      // if there is only one measurement then show it in the same line
+      // and don't include the measurement to make display more compact
+      properties = " " + currentMeasurement->GetValueWithUnitsAsPrintableString();
+      }
+    else if (numberOfValidMeasurements == 2)
+      {
+      // rewrite first measurement
+      // we still have the full text of the last measurement, use it
+      properties = "\n" + measurementText;
+      }
+
+    measurementText = currentMeasurement->GetName() + std::string(": ") + measurementValue;
 
     // description
     if (!description.empty())
@@ -2077,18 +2161,20 @@ void vtkMRMLMarkupsNode::WriteMeasurementsToDescription()
     description += measurementText;
 
     // properties label
-    if (this->Measurements.size() == 1)
+    if (numberOfValidMeasurements > 1)
       {
-      // if there is only one measurement then show it in the same line
-      // and don't include the measurement to make display more compact
-      this->PropertiesLabelText += " " + (*measurementIt)->GetValueWithUnitsAsPrintableString();
-      }
-    else
-      {
-      this->PropertiesLabelText += "\n" + measurementText;
+      // rewrite first measurement
+      // we still have the full text of the last measurement, use it
+      properties += "\n" + measurementText;
       }
     }
+
   this->SetDescription(description.c_str());
+  if (properties != this->PropertiesLabelText)
+    {
+    this->PropertiesLabelText = properties;
+    this->Modified();
+    }
 }
 
 //---------------------------------------------------------------------------
@@ -2213,4 +2299,23 @@ int vtkMRMLMarkupsNode::GetPositionStatusFromString(const char* name)
 std::string vtkMRMLMarkupsNode::GetPropertiesLabelText()
 {
   return this->PropertiesLabelText;
+}
+
+//---------------------------------------------------------------------------
+int vtkMRMLMarkupsNode::GetNthControlPointIndexByPositionStatus(int pointIndex, int positionStatus)
+{
+  int foundControlPoints = 0;
+  for (ControlPointsListType::iterator controlPointIt = this->ControlPoints.begin();
+    controlPointIt != this->ControlPoints.end(); ++controlPointIt)
+    {
+    if ((*controlPointIt)->PositionStatus == positionStatus)
+      {
+      if (foundControlPoints == pointIndex)
+        {
+        return controlPointIt - this->ControlPoints.begin();
+        }
+      foundControlPoints++;
+      }
+    }
+  return -1;
 }

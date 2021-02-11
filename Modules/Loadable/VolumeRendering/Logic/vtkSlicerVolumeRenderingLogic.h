@@ -23,7 +23,6 @@ class vtkMRMLVolumeRenderingDisplayNode;
 #include "vtkSlicerModuleLogic.h"
 
 // MRML includes
-class vtkMRMLAnnotationROINode;
 class vtkMRMLLabelMapVolumeDisplayNode;
 class vtkMRMLNode;
 class vtkMRMLScalarVolumeDisplayNode;
@@ -134,6 +133,12 @@ public:
   /// Common properties of the display nodes are propagated.
   void ChangeVolumeRenderingMethod(const char* displayNodeClassName = nullptr);
 
+  /// Set volume rendering properties that seems well suited for the volume.
+  /// The function uses heuristics to detect what kind of volume it is (CT, MRI, other),
+  /// based on its intensity range and choses preset accoringly.
+  /// Returns false is volume type could not be detected and so properties are not changed.
+  bool SetRecommendedVolumeRenderingProperties(vtkMRMLVolumeRenderingDisplayNode* vrDisplayNode);
+
   /// Applies the properties (window level, threshold and color function) of
   /// a volume display node to the volume rendering display node.
   /// If displayNode is 0, it uses the first display node.
@@ -230,7 +235,7 @@ public:
   void UpdateDisplayNodeFromVolumeNode(vtkMRMLVolumeRenderingDisplayNode *displayNode,
                                        vtkMRMLVolumeNode *volumeNode,
                                        vtkMRMLVolumePropertyNode *propNode = nullptr,
-                                       vtkMRMLAnnotationROINode *roiNode = nullptr);
+                                       vtkMRMLNode *roiNode = nullptr);
 
   /// Remove ViewNode from VolumeRenderingDisplayNode for a VolumeNode,
   void RemoveViewFromVolumeDisplayNodes(vtkMRMLVolumeNode *volumeNode,
@@ -253,7 +258,7 @@ public:
   vtkMRMLVolumeRenderingDisplayNode* GetFirstVolumeRenderingDisplayNode(vtkMRMLVolumeNode *volumeNode);
 
   /// Find the first volume rendering display node that uses the ROI
-  vtkMRMLVolumeRenderingDisplayNode* GetFirstVolumeRenderingDisplayNodeByROINode(vtkMRMLAnnotationROINode* roiNode);
+  vtkMRMLVolumeRenderingDisplayNode* GetFirstVolumeRenderingDisplayNodeByROINode(vtkMRMLNode* roiNode);
 
   void UpdateTranferFunctionRangeFromImage(vtkMRMLVolumeRenderingDisplayNode* vspNode);
 
@@ -277,14 +282,14 @@ public:
   /// module share directory
   /// \sa vtkMRMLVolumePropertyNode, GetModuleShareDirectory()
   vtkMRMLScene* GetPresetsScene();
-  
+
   /// Add a preset to the preset scene.
   /// If the optional icon image is specified then that will be used to
   /// in preset selector widgets. The icon is stored as a volume node
   /// in the preset scene.
   /// \sa GetPresetsScene(), GetIconVolumeReferenceRole()
   void AddPreset(vtkMRMLVolumePropertyNode* preset, vtkImageData* icon = nullptr);
-  
+
   /// Removes a preset and its associated icon (if specified) from the preset scene.
   /// \sa GetPresetsScene(), GetIconVolumeReferenceRole()
   void RemovePreset(vtkMRMLVolumePropertyNode* preset);
@@ -292,7 +297,7 @@ public:
   /// Use custom presets scene
   /// \return Nonzero if successfully loaded
   int LoadCustomPresetsScene(const char* sceneFilePath);
-  
+
   /// This node reference role name allows linking from a preset node to a volume
   /// node that contains an icon for the preset node.
   /// For example, the icon is used for representing the node in qSlicerPresetComboBox.
@@ -314,6 +319,9 @@ public:
   /// Returns true if different
   bool IsDifferentFunction(vtkColorTransferFunction* function1,
                            vtkColorTransferFunction* function2) const;
+
+  vtkSetMacro(DefaultROIClassName, std::string);
+  vtkGetMacro(DefaultROIClassName, std::string);
 
 protected:
   vtkSlicerVolumeRenderingLogic();
@@ -349,6 +357,7 @@ protected:
   bool LoadPresets(vtkMRMLScene* scene);
   vtkMRMLScene* PresetsScene;
 
+  std::string DefaultROIClassName;
 private:
   vtkSlicerVolumeRenderingLogic(const vtkSlicerVolumeRenderingLogic&) = delete;
   void operator=(const vtkSlicerVolumeRenderingLogic&) = delete;

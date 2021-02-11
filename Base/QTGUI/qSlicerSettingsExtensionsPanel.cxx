@@ -25,6 +25,7 @@
 // QtGUI includes
 #include "qSlicerApplication.h"
 #include "qSlicerModuleSelectorToolBar.h"
+#include "qSlicerRelativePathMapper.h"
 #include "qSlicerSettingsExtensionsPanel.h"
 #include "ui_qSlicerSettingsExtensionsPanel.h"
 
@@ -72,14 +73,17 @@ void qSlicerSettingsExtensionsPanelPrivate::init()
   // Register settings
   q->registerProperty("Extensions/ManagerEnabled", this->ExtensionsManagerEnabledCheckBox,
                       "checked", SIGNAL(toggled(bool)),
-                      "Enable/Disable extension manager", ctkSettingsPanel::OptionRequireRestart,
+                      "Enable/Disable extensions manager", ctkSettingsPanel::OptionRequireRestart,
                       app->revisionUserSettings());
   q->registerProperty("Extensions/ServerUrl", this->ExtensionsServerUrlLineEdit,
                       "text", SIGNAL(textChanged(QString)),
                       QString(), ctkSettingsPanel::OptionNone,
                       app->revisionUserSettings());
-  q->registerProperty("Extensions/InstallPath", this->ExtensionsInstallPathButton,
-                      "directory", SIGNAL(directoryChanged(QString)),
+
+  qSlicerRelativePathMapper* relativePathMapper = new qSlicerRelativePathMapper(
+    this->ExtensionsInstallPathButton, "directory", SIGNAL(directoryChanged(QString)));
+  q->registerProperty("Extensions/InstallPath", relativePathMapper,
+                      "relativePath", SIGNAL(relativePathChanged(QString)),
                       QString(), ctkSettingsPanel::OptionNone,
                       app->revisionUserSettings());
 
@@ -89,7 +93,7 @@ void qSlicerSettingsExtensionsPanelPrivate::init()
   QObject::connect(this->ExtensionsServerUrlLineEdit, SIGNAL(textChanged(QString)),
                    q, SIGNAL(extensionsServerUrlChanged(QString)));
   QObject::connect(this->ExtensionsInstallPathButton, SIGNAL(directoryChanged(QString)),
-                   q, SLOT(onExensionsPathChanged(QString)));
+                   q, SLOT(onExtensionsPathChanged(QString)));
   QObject::connect(this->OpenExtensionsManagerPushButton, SIGNAL(clicked()),
                    app, SLOT(openExtensionsManagerDialog()));
 }
@@ -116,7 +120,7 @@ void qSlicerSettingsExtensionsPanel::onExtensionsManagerEnabled(bool value)
 }
 
 // --------------------------------------------------------------------------
-void qSlicerSettingsExtensionsPanel::onExensionsPathChanged(const QString& path)
+void qSlicerSettingsExtensionsPanel::onExtensionsPathChanged(const QString& path)
 {
   qSlicerCoreApplication::application()->setExtensionsInstallPath(path);
 }

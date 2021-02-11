@@ -1,8 +1,10 @@
 # Segment editor
 
-This is a module for segmentation of volumes. Segmentations (also known as contouring) delineate structures of interest. Some of the tools mimic a painting interface like photoshop or gimp, but work on 3D arrays of voxels rather than on 2D pixels. This module is a new, improved version of the legacy Editor module. The Segment Editor contains many of the same functionalities and many more. New features include: overlapping segments, display in both 2D and 3D views, per-segment visualization options, editing in 3D views, create segmentation by interpolating or extrapolating segmentation on a few slices, editing on slices in any orientation.
+This is a module is for specifying segments (structures of interest) in 2D/3D/4D images. Some of the tools mimic a painting interface like photoshop or gimp, but work on 3D arrays of voxels rather than on 2D pixels. The module offers editing of overlapping segments, display in both 2D and 3D views, fine-grained visualization options, editing in 3D views, create segmentation by interpolating or extrapolating segmentation on a few slices, editing on slices in any orientation.
 
-It is important to remember that Segment Editor does not edit labelmap volumes, as Editor does. Segment editor creates segmentations, which can do many things that labelmap volumes cannot (overlapping contours, show/hide segments individually, show in 3D view, etc). Segmentations can be converted to labelmap volumes and models using the Import/Export section of [Segmentations](Segmentations) module.
+Segment Editor does not edit labelmap volumes or models, but segmentations can be easily converted to/from labelmap volumes and models using the Import/Export section of [Segmentations](Segmentations) module.
+
+![](https://github.com/Slicer/Slicer/releases/download/docs-resources/image_segmentation_segment_editor_module.png)
 
 ## Keyboard shortcuts
 
@@ -24,6 +26,10 @@ The following keyboard shortcuts are active when you are in the Editor module.  
 | `Shift` + `1`, `2`, … `0` | select effect (11-20)                  |
 | `i`                       | toggle masking by intensity range      |
 
+## Tutorials
+
+- [Segmentation tutorials](https://www.slicer.org/wiki/Documentation/Nightly/Training#Segmentation)
+
 ## Panels and their use
 
 - Segmentation: Choose the segmentation to edit
@@ -44,11 +50,6 @@ The following keyboard shortcuts are active when you are in the Editor module.  
     - Overwrite all: Segment will not overlap (default).
     - Overwrite visible: Visible segments will not overlap with each other. Hidden segments will not be overwritten by changes done to visible segments.
     - Allow overlap: Changing one segment will not change any other.
-
-## Tutorials
-
-- [Tutorial for 3D printing](https://www.slicer.org/wiki/Documentation/Nightly/Training#Segmentation_for_3D_printing): create a 3D-printable STL model from a section of the spinal column, segmented from a CT image, attached to a base designed in CAD software.
-
 
 ## Effects
 
@@ -149,6 +150,17 @@ Grows or shrinks the selected segment by the specified margin.
 
 Smoothes selected labelmap or all labelmaps (only for Joint smoothing method).
 
+By clicking `Apply` button, the entire segmentation is smoothed.
+
+To smooth a specific region, left click and drag in any slice or 3D view. Same smoothing method and strength is used as for the whole-segmentation mode (size of the brush does not affect smoothing strength, just makes it easier to designate a larger region).
+
+Available methods:
+- Median: removes small extrusions and fills small gaps while keeps smooth contours mostly unchanged. Applied to selected segment only.</li>
+- Opening: removes extrusions smaller than the specified kernel size. Does not add anything to the segment. Applied to selected segment only.</li>
+- Closing: fills sharp corners and holes smaller than the specified kernel size. Does not remove anything from the segment. Applied to selected segment only.</li>
+- Gaussian: smoothes all details. Strong smoothing as achievable, but tends to shrink the segment. Applied to selected segment only.</li>
+- Joint smoothing: smoothes multiple segments at once, preserving watertight interface between them. If segments overlap, segment higher in the segments table will have priority. Applied to all visible segments.
+
 ### ![](https://github.com/Slicer/Slicer/releases/download/docs-resources/module_segmenteditor_scissors.png) Scissors
 
 Clip segments to the specified region or fill regions of a segment (typically used with masking). Regions can be drawn on both slice view or 3D views.
@@ -167,10 +179,51 @@ Use this tool to create a unique segment for each connected region of the select
 
 Apply Boolean operators to selected segment or combine segments.
 
-## Hints
+### ![](https://github.com/Slicer/Slicer/releases/download/docs-resources/module_segmenteditor_mask_volume.png) Mask volume
+
+Blank out inside/outside of a segment in a volume or create a binary mask. Result can be saved into a new volume or overwrite the input volume.
+This is useful for removing irrelevant details from an image (for example remove patient table; or crop the volume to arbitrary shape for volume rendering) or create masks for image processing operations (such as registration or intensity correction).
+
+- Fill inside: set all voxels of the selected volume to the specified value inside the selected segment
+- Fill outside: set all voxels of the selected volume to the specified value outside the selected segment
+- Fill inside and outside: create a binary labelmap volume as output. Most image procesing operations require background (outside, ignored) region to be filled with 0 value.
+
+## Tips
 
 - A large radius paint brush with threshold painting is often a very fast way to segment anatomy that is consistently brighter or darker than the surrounding region, but partially connected to similar nearby structures (this happens a lot).
 - Use the slice viewer menus to control the label map opacity and display mode (to show outlines only or full volume).
+
+## Frequently asked questions
+
+### Cannot paint outside some boundaries
+
+When you create a segmentation, internal labelmap geometry (extent, origin, spacing, axis directions) is determined from the master volume *that you choose first*. You cannot paint outside this extent.
+
+If you want to extend the segmentation to a larger region then you need to modify segmentation's geometry using "Specify geometry" button.
+
+### Segmentation is not accurate enough
+
+If details cannot be accurately depicted during segmentation or the exported surface has non-negligible errors (there are gaps or overlap between segments), then it is necessary to reduce the segmentation's spacing (more accurately: spacing of the internal binary labelmap representation in the segmentation node). *Spacing* is also known as *voxel size* or may be referred to as *resoution* (which is inverse of spacing - higher resolution means smaller spacing).
+
+As a general rule, segmentation's spacing needs to be 2-5x smaller than the size of the smallest relevant detail or the maximum acceptable surface error in the generated surface. 
+
+By default, segmentation's spacing is set from the *master volume that is selected first after the segmentation is created*. If the first selected master volume's resolution is not sufficient or highly anisotropic (spacing value is not the same along the 3 axes) then one of the followings is recommended:
+  - Option A. Crop and resample the input volume using *Crop volume* module before starting segmentation. Make spacing smaller (small enough to represent all details but not too small to slow things down and consume too much memory) and isotropic by reducing *Spacing scale* and enabling *Isotropic spacing*. Also adjust the region of interest to crop the volume to minimum necessary size to minimize memory usage and make editing faster.
+  - Option B. Click *Specify geometry* button in Segment Editor any time to specify smaller spacing. After this smooth segments using *Smoothing* effect. *Joint smoothing* method is recommended as it can smooth all the segments at once and it preserves boundaries between segments. *Joint smoothing* flattens all the processed segments into one layer, so if the segentation contains overlapping segments then segment in several steps, in each step only show a set of non-overlapping segments (or use any of the other smoothing methods, which only operate on the selected segment).
+
+### Generated surface contains step artifacts
+
+If 3D surface generated from the segmentation contains step artifacts (looks "blocky") then it is necessary to increase smoothing and/or reduce segmentation's spacing.
+
+Users need to choose between having *smooth surface* vs. *no gaps or overlap between segments*. It is impossible to have both. To achieve the desired results, there are two parameters to control: segmentation's spacing and surface smoothing factor:
+
+1. Choose spacing that allows accurate segmentation ([see *Segmentation is not accurate enough* section above](#segmentation-is-not-accurate-enough))
+2. Choose smoothing value that removes staircase artifacts but still preserves all details that you are interested in.
+3. If you find that the surface smoothing value that is high enough to remove staircase artifacts also removes relevant details then further reduce spacing.
+
+### Paint affects neighbor slices or stripes appear in painted segments
+
+Segment Editor allows editing of segmentation on slices of arbitrary orientation. However, since edited segments are stored as binary labelmaps, "striping" artifacts may appear on thin segments or near boundary of any segments. See [*Oblique segmentation* segmentation recipe](https://lassoan.github.io/SlicerSegmentationRecipes/ObliqueSliceSegmentation/) for more details and instructions on how to deal with these artifacts.
 
 ## Limitations
 

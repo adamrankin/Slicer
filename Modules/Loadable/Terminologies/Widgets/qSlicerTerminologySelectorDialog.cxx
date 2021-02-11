@@ -45,9 +45,9 @@ public:
 public:
   void init();
 private:
-  qSlicerTerminologyNavigatorWidget* NavigatorWidget;
-  QPushButton* SelectButton;
-  QPushButton* CancelButton;
+  qSlicerTerminologyNavigatorWidget* NavigatorWidget{nullptr};
+  QPushButton* SelectButton{nullptr};
+  QPushButton* CancelButton{nullptr};
 
   /// Terminology and other metadata (name, color, auto-generated flags) into which the selection is set
   qSlicerTerminologyNavigatorWidget::TerminologyInfoBundle TerminologyInfo;
@@ -91,6 +91,7 @@ void qSlicerTerminologySelectorDialogPrivate::init()
 
   // Make connections
   connect(this->NavigatorWidget, SIGNAL(selectionValidityChanged(bool)), q, SLOT(setSelectButtonEnabled(bool)));
+  connect(this->NavigatorWidget, SIGNAL(typeDoubleClicked()), this, SLOT(accept()));
   connect(this->SelectButton, SIGNAL(clicked()), this, SLOT(accept()));
   connect(this->CancelButton, SIGNAL(clicked()), this, SLOT(reject()));
 }

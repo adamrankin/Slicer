@@ -32,11 +32,15 @@
 #include "vtkSlicerApplicationLogic.h"
 
 // MRML includes
+#include <vtkMRMLLabelMapVolumeNode.h>
 #include <vtkMRMLScene.h>
+#include <vtkMRMLScalarVolumeDisplayNode.h>
 #include <vtkMRMLScalarVolumeNode.h>
 #include <vtkMRMLSelectionNode.h>
 #include <vtkMRMLSliceCompositeNode.h>
+#include <vtkMRMLSliceLogic.h>
 #include <vtkMRMLSliceNode.h>
+#include <vtkMRMLViewNode.h>
 
 // VTK includes
 #include <vtkObjectFactory.h>
@@ -64,6 +68,7 @@ public:
   void init();
 
   bool resetFieldOfViewOnShow();
+  bool resetViewOrientationOnShow();
 
   qMRMLSliceWidget* sliceWidgetForSliceCompositeNode(vtkMRMLSliceCompositeNode* compositeNode);
 
@@ -72,9 +77,10 @@ public:
   QIcon VolumeVisibilityOffIcon;
   QIcon VolumeVisibilityOnIcon;
 
-  QAction* ShowVolumesInBranchAction;
-  QAction* ShowVolumeInForegroundAction;
-  QAction* ResetFieldOfViewOnShowAction;
+  QAction* ShowVolumesInBranchAction{nullptr};
+  QAction* ShowVolumeInForegroundAction{nullptr};
+  QAction* ResetFieldOfViewOnShowAction{nullptr};
+  QAction* ResetViewOrientationOnShowAction{nullptr};
 };
 
 //-----------------------------------------------------------------------------
@@ -87,10 +93,6 @@ qSlicerSubjectHierarchyVolumesPluginPrivate::qSlicerSubjectHierarchyVolumesPlugi
   this->VolumeIcon = QIcon(":Icons/Volume.png");
   this->VolumeVisibilityOffIcon = QIcon(":Icons/VolumeVisibilityOff.png");
   this->VolumeVisibilityOnIcon = QIcon(":Icons/VolumeVisibilityOn.png");
-
-  this->ShowVolumesInBranchAction = nullptr;
-  this->ShowVolumeInForegroundAction = nullptr;
-  this->ResetFieldOfViewOnShowAction = nullptr;
 }
 
 //------------------------------------------------------------------------------
@@ -116,6 +118,11 @@ void qSlicerSubjectHierarchyVolumesPluginPrivate::init()
   QObject::connect(this->ResetFieldOfViewOnShowAction, SIGNAL(toggled(bool)), q, SLOT(toggleResetFieldOfViewOnShowAction(bool)));
   this->ResetFieldOfViewOnShowAction->setCheckable(true);
   this->ResetFieldOfViewOnShowAction->setChecked(false);
+
+  this->ResetViewOrientationOnShowAction = new QAction("Reset view orientation on show",q);
+  QObject::connect(this->ResetViewOrientationOnShowAction, SIGNAL(toggled(bool)), q, SLOT(toggleResetViewOrientationOnShowAction(bool)));
+  this->ResetViewOrientationOnShowAction->setCheckable(true);
+  this->ResetViewOrientationOnShowAction->setChecked(false);
 }
 
 //-----------------------------------------------------------------------------
@@ -125,7 +132,14 @@ qSlicerSubjectHierarchyVolumesPluginPrivate::~qSlicerSubjectHierarchyVolumesPlug
 bool qSlicerSubjectHierarchyVolumesPluginPrivate::resetFieldOfViewOnShow()
 {
   QSettings settings;
-  return settings.value("SubjectHierarchy/ResetFieldOfViewOnShowVolume", false).toBool();
+  return settings.value("SubjectHierarchy/ResetFieldOfViewOnShowVolume", true).toBool();
+}
+
+//-----------------------------------------------------------------------------
+bool qSlicerSubjectHierarchyVolumesPluginPrivate::resetViewOrientationOnShow()
+{
+  QSettings settings;
+  return settings.value("SubjectHierarchy/ResetViewOrientationOnShowVolume", true).toBool();
 }
 
 //------------------------------------------------------------------------------
@@ -343,10 +357,31 @@ int qSlicerSubjectHierarchyVolumesPlugin::getDisplayVisibility(vtkIdType itemID)
     }
 
   // Sanity checks for volume
-  vtkMRMLScalarVolumeNode* volumeNode = vtkMRMLScalarVolumeNode::SafeDownCast(shNode->GetItemDataNode(itemID));
+  vtkMRMLVolumeNode* volumeNode = vtkMRMLVolumeNode::SafeDownCast(shNode->GetItemDataNode(itemID));
   if (!volumeNode)
     {
     return -1;
+    }
+
+  // Return with 1 if volume is shown using volume rendering
+  int numberOfDisplayNodes = volumeNode->GetNumberOfDisplayNodes();
+  for (int displayNodeIndex = 0; displayNodeIndex < numberOfDisplayNodes; displayNodeIndex++)
+    {
+    vtkMRMLDisplayNode* displayNode = volumeNode->GetNthDisplayNode(displayNodeIndex);
+    if (!displayNode)
+      {
+      continue;
+      }
+    if (vtkMRMLScalarVolumeDisplayNode::SafeDownCast(displayNode))
+      {
+      // scalar volume display node does not control visibility, visibility in those
+      // views will be collected from slice views below
+      continue;
+      }
+    if (displayNode->GetVisibility())
+      {
+      return 1;
+      }
     }
 
   // Collect all volumes that are shown in any slice views in any layers
@@ -393,6 +428,7 @@ void qSlicerSubjectHierarchyVolumesPlugin::showVolumeInAllViews(
   this->collectShownVolumes(subjectHierarchyItemsToUpdate, layer);
   subjectHierarchyItemsToUpdate.insert(shNode->GetItemByDataNode(node));
 
+  vtkSlicerApplicationLogic* appLogic = qSlicerApplication::application()->applicationLogic();
   vtkMRMLSliceCompositeNode* compositeNode = nullptr;
   int numberOfCompositeNodes = scene->GetNumberOfNodesByClass("vtkMRMLSliceCompositeNode");
   for (int i=0; i<numberOfCompositeNodes; i++)
@@ -410,15 +446,41 @@ void qSlicerSubjectHierarchyVolumesPlugin::showVolumeInAllViews(
       {
       compositeNode->SetLabelVolumeID(node->GetID());
       }
-
-    if (d->resetFieldOfViewOnShow())
+    bool resetOrientation = d->resetViewOrientationOnShow();
+    bool resetFov = d->resetFieldOfViewOnShow();
+    if (resetOrientation || resetFov)
       {
       qMRMLSliceWidget* sliceWidget = d->sliceWidgetForSliceCompositeNode(compositeNode);
-      if (sliceWidget)
+      vtkMRMLSliceLogic* sliceLogic = sliceWidget ? sliceWidget->sliceLogic() : nullptr;
+      vtkMRMLSliceNode* sliceNode = sliceWidget ? sliceWidget->mrmlSliceNode() : nullptr;
+      if (sliceLogic && sliceNode)
         {
-        sliceWidget->fitSliceToBackground();
+        if (resetOrientation)
+          {
+          // Set to default orientation before rotation so that the view is snapped
+          // closest to the default orientation of this slice view.
+          sliceNode->SetOrientationToDefault();
+          sliceWidget->sliceLogic()->RotateSliceToLowestVolumeAxes();
+          }
+        if (resetFov)
+          {
+          sliceLogic->FitSliceToAll();
+          }
         }
       }
+    }
+
+  // Volume rendering display
+  int numberOfDisplayNodes = node->GetNumberOfDisplayNodes();
+  for (int displayNodeIndex = 0; displayNodeIndex < numberOfDisplayNodes; displayNodeIndex++)
+    {
+    vtkMRMLDisplayNode* displayNode = node->GetNthDisplayNode(displayNodeIndex);
+    if (vtkMRMLScalarVolumeDisplayNode::SafeDownCast(displayNode))
+      {
+      // visibility in slice views is managed separately
+      continue;
+      }
+    displayNode->SetVisibility(true);
     }
 
   // Update scene model for subject hierarchy nodes that were just shown
@@ -450,9 +512,9 @@ void qSlicerSubjectHierarchyVolumesPlugin::hideVolumeFromAllViews(vtkMRMLScalarV
   for (int i=0; i<numberOfCompositeNodes; i++)
     {
     compositeNode = vtkMRMLSliceCompositeNode::SafeDownCast(scene->GetNthNodeByClass(i, "vtkMRMLSliceCompositeNode"));
-    char* backgroundVolumeID = compositeNode->GetBackgroundVolumeID();
-    char* foregroundVolumeID = compositeNode->GetForegroundVolumeID();
-    char* labelVolumeID = compositeNode->GetLabelVolumeID();
+    const char* backgroundVolumeID = compositeNode->GetBackgroundVolumeID();
+    const char* foregroundVolumeID = compositeNode->GetForegroundVolumeID();
+    const char* labelVolumeID = compositeNode->GetLabelVolumeID();
     if (backgroundVolumeID && !strcmp(backgroundVolumeID, volumeNodeID))
       {
       compositeNode->SetBackgroundVolumeID(nullptr);
@@ -465,6 +527,19 @@ void qSlicerSubjectHierarchyVolumesPlugin::hideVolumeFromAllViews(vtkMRMLScalarV
       {
       compositeNode->SetLabelVolumeID(nullptr);
       }
+    }
+
+  // Volume rendering display
+  int numberOfDisplayNodes = node->GetNumberOfDisplayNodes();
+  for (int displayNodeIndex = 0; displayNodeIndex < numberOfDisplayNodes; displayNodeIndex++)
+    {
+    vtkMRMLDisplayNode* displayNode = node->GetNthDisplayNode(displayNodeIndex);
+    if (vtkMRMLScalarVolumeDisplayNode::SafeDownCast(displayNode))
+      {
+      // visibility in slice views is managed separately
+      continue;
+      }
+    displayNode->SetVisibility(false);
     }
 
   // Get subject hierarchy item for the volume node and have the scene model updated
@@ -533,7 +608,8 @@ QList<QAction*> qSlicerSubjectHierarchyVolumesPlugin::visibilityContextMenuActio
   Q_D(const qSlicerSubjectHierarchyVolumesPlugin);
 
   QList<QAction*> actions;
-  actions << d->ShowVolumesInBranchAction << d->ShowVolumeInForegroundAction << d->ResetFieldOfViewOnShowAction;
+  actions << d->ShowVolumesInBranchAction << d->ShowVolumeInForegroundAction
+    << d->ResetFieldOfViewOnShowAction << d->ResetViewOrientationOnShowAction;
   return actions;
 }
 
@@ -561,6 +637,9 @@ void qSlicerSubjectHierarchyVolumesPlugin::showVisibilityContextMenuActionsForIt
 
     d->ResetFieldOfViewOnShowAction->setChecked(d->resetFieldOfViewOnShow());
     d->ResetFieldOfViewOnShowAction->setVisible(true);
+
+    d->ResetViewOrientationOnShowAction->setChecked(d->resetViewOrientationOnShow());
+    d->ResetViewOrientationOnShowAction->setVisible(true);
     }
 
   // Folders (Patient, Study, Folder)
@@ -767,4 +846,168 @@ void qSlicerSubjectHierarchyVolumesPlugin::toggleResetFieldOfViewOnShowAction(bo
 {
   QSettings settings;
   settings.setValue("SubjectHierarchy/ResetFieldOfViewOnShowVolume", on);
+}
+
+//---------------------------------------------------------------------------
+void qSlicerSubjectHierarchyVolumesPlugin::toggleResetViewOrientationOnShowAction(bool on)
+{
+  QSettings settings;
+  settings.setValue("SubjectHierarchy/ResetViewOrientationOnShowVolume", on);
+}
+
+//-----------------------------------------------------------------------------
+bool qSlicerSubjectHierarchyVolumesPlugin::showItemInView(vtkIdType itemID, vtkMRMLAbstractViewNode* viewNode, vtkIdList* allItemsToShow)
+{
+  Q_D(qSlicerSubjectHierarchyVolumesPlugin);
+  vtkMRMLViewNode* threeDViewNode = vtkMRMLViewNode::SafeDownCast(viewNode);
+  if (threeDViewNode)
+    {
+    qSlicerSubjectHierarchyAbstractPlugin* volumeRenderingPlugin = qSlicerSubjectHierarchyPluginHandler::instance()->pluginByName("VolumeRendering");
+    if (!volumeRenderingPlugin)
+      {
+      qCritical() << Q_FUNC_INFO << ": Failed to access Volume rendering subject hierarchy plugin";
+      return false;
+      }
+    return volumeRenderingPlugin->showItemInView(itemID, viewNode, allItemsToShow);
+    }
+
+  vtkMRMLSubjectHierarchyNode* shNode = qSlicerSubjectHierarchyPluginHandler::instance()->subjectHierarchyNode();
+  if (!shNode)
+    {
+    qCritical() << Q_FUNC_INFO << ": Failed to access subject hierarchy node";
+    return false;
+    }
+
+  vtkMRMLVolumeNode* volumeToShow = vtkMRMLVolumeNode::SafeDownCast(shNode->GetItemDataNode(itemID));
+  if (!volumeToShow)
+    {
+    // This method can only handle volume nodes
+    return false;
+    }
+
+  vtkMRMLSliceNode* sliceNode = vtkMRMLSliceNode::SafeDownCast(viewNode);
+  if (!sliceNode)
+    {
+    qCritical() << Q_FUNC_INFO << " failed: can only show items if a valid slice view is specified";
+    return false;
+    }
+
+  // Get foreground, background, and label nodes
+  vtkMRMLVolumeNode* backgroundNode = nullptr;
+  vtkMRMLVolumeNode* foregroundNode = nullptr;
+  vtkMRMLLabelMapVolumeNode* labelNode = nullptr;
+  for (vtkIdType itemIndex = 0; itemIndex < allItemsToShow->GetNumberOfIds(); itemIndex++)
+    {
+    vtkMRMLVolumeNode* volumeNode = vtkMRMLVolumeNode::SafeDownCast(shNode->GetItemDataNode(allItemsToShow->GetId(itemIndex)));
+    if (!volumeNode)
+      {
+      continue;
+      }
+    if (vtkMRMLLabelMapVolumeNode::SafeDownCast(volumeNode))
+      {
+      if (labelNode == nullptr)
+        {
+        labelNode = vtkMRMLLabelMapVolumeNode::SafeDownCast(volumeNode);
+        }
+      }
+    else
+      {
+      if (!backgroundNode)
+        {
+        backgroundNode = volumeNode;
+        }
+      else if (!foregroundNode)
+        {
+        foregroundNode = volumeNode;
+        }
+      }
+      if (backgroundNode && foregroundNode && labelNode)
+        {
+        // all volume layers are filled - we can ignore the rest of the selected volumes
+        break;
+        }
+    }
+
+  // Show the volume in slice view
+  vtkMRMLSliceLogic* sliceLogic = nullptr;
+  vtkSlicerApplicationLogic* appLogic = qSlicerApplication::application()->applicationLogic();
+  if (appLogic)
+    {
+    sliceLogic = appLogic->GetSliceLogic(sliceNode);
+    }
+  if (!sliceLogic)
+    {
+    qCritical() << Q_FUNC_INFO << " failed: cannot get slice logic";
+    return false;
+    }
+  vtkMRMLSliceCompositeNode* sliceCompositeNode = sliceLogic->GetSliceCompositeNode();
+  if (!sliceCompositeNode)
+    {
+    qCritical() << Q_FUNC_INFO << " failed: cannot get slice composite node";
+    return false;
+    }
+  if (backgroundNode || foregroundNode)
+    {
+    sliceLogic->StartSliceCompositeNodeInteraction(
+      vtkMRMLSliceCompositeNode::BackgroundVolumeFlag
+      | vtkMRMLSliceCompositeNode::ForegroundVolumeFlag
+      | vtkMRMLSliceCompositeNode::ForegroundOpacityFlag);
+    if (volumeToShow == backgroundNode)
+      {
+      sliceCompositeNode->SetBackgroundVolumeID(backgroundNode->GetID());
+      if (!foregroundNode)
+        {
+        sliceCompositeNode->SetForegroundVolumeID(nullptr);
+        }
+      sliceLogic->EndSliceCompositeNodeInteraction();
+      }
+    if (volumeToShow == foregroundNode)
+      {
+      sliceLogic->StartSliceCompositeNodeInteraction(vtkMRMLSliceCompositeNode::BackgroundVolumeFlag | vtkMRMLSliceCompositeNode::ForegroundVolumeFlag);
+      if (!backgroundNode)
+        {
+        sliceCompositeNode->SetBackgroundVolumeID(nullptr);
+        }
+      sliceCompositeNode->SetForegroundVolumeID(foregroundNode->GetID());
+      sliceCompositeNode->SetForegroundOpacity(0.5);
+      sliceLogic->EndSliceCompositeNodeInteraction();
+      }
+    }
+  if (volumeToShow == labelNode)
+    {
+    sliceLogic->StartSliceCompositeNodeInteraction(vtkMRMLSliceCompositeNode::LabelVolumeFlag);
+    sliceCompositeNode->SetLabelVolumeID(labelNode ? labelNode->GetID() : nullptr);
+    sliceLogic->EndSliceCompositeNodeInteraction();
+    }
+
+  // Align view orientation and field of view to background volume
+  if (d->resetViewOrientationOnShow() || d->resetFieldOfViewOnShow())
+    {
+    int interactionFlags = 0;
+    if (d->resetViewOrientationOnShow())
+      {
+      interactionFlags |= vtkMRMLSliceNode::ResetOrientationFlag
+        | vtkMRMLSliceNode::RotateToBackgroundVolumePlaneFlag;
+      }
+    if (d->resetFieldOfViewOnShow())
+      {
+      interactionFlags |= vtkMRMLSliceNode::ResetFieldOfViewFlag;
+      }
+    sliceLogic->StartSliceNodeInteraction(interactionFlags);
+    if (d->resetViewOrientationOnShow())
+      {
+      // reset orientation before snapping slice to closest volume axis
+      sliceNode->SetOrientationToDefault();
+      sliceLogic->RotateSliceToLowestVolumeAxes();
+      }
+    if (d->resetFieldOfViewOnShow())
+      {
+      sliceLogic->FitSliceToAll();
+      }
+    sliceLogic->EndSliceNodeInteraction();
+    }
+
+  shNode->ItemModified(itemID);
+
+  return true;
 }

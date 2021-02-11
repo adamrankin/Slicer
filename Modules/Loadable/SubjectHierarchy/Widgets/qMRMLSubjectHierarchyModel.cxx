@@ -26,6 +26,7 @@
 #include <QApplication>
 #include <QMessageBox>
 #include <QTimer>
+#include <QUrl>
 
 // qMRML includes
 #include "qMRMLSubjectHierarchyModel_p.h"
@@ -54,6 +55,7 @@
 #include "qSlicerSubjectHierarchyAbstractPlugin.h"
 #include "qSlicerSubjectHierarchyDefaultPlugin.h"
 
+
 //------------------------------------------------------------------------------
 qMRMLSubjectHierarchyModelPrivate::qMRMLSubjectHierarchyModelPrivate(qMRMLSubjectHierarchyModel& object)
   : q_ptr(&object)
@@ -66,6 +68,7 @@ qMRMLSubjectHierarchyModelPrivate::qMRMLSubjectHierarchyModelPrivate(qMRMLSubjec
   , SubjectHierarchyNode(nullptr)
   , MRMLScene(nullptr)
   , TerminologiesModuleLogic(nullptr)
+  , IsDroppedInside(false)
 {
   this->CallBack = vtkSmartPointer<vtkCallbackCommand>::New();
   this->PendingItemModified = -1; // -1 means not updating
@@ -188,14 +191,8 @@ vtkSlicerTerminologiesModuleLogic* qMRMLSubjectHierarchyModelPrivate::terminolog
     {
     return this->TerminologiesModuleLogic;
     }
-
-  vtkSlicerTerminologiesModuleLogic* terminologiesLogic = nullptr;
-  qSlicerAbstractCoreModule* terminologiesModule =
-    qSlicerCoreApplication::application()->moduleManager()->module("Terminologies");
-  if (terminologiesModule)
-    {
-    terminologiesLogic = vtkSlicerTerminologiesModuleLogic::SafeDownCast(terminologiesModule->logic());
-    }
+    vtkSlicerTerminologiesModuleLogic* terminologiesLogic = vtkSlicerTerminologiesModuleLogic::SafeDownCast(
+      qSlicerCoreApplication::application()->moduleLogic("Terminologies"));
   return terminologiesLogic;
 }
 
@@ -291,6 +288,8 @@ void qMRMLSubjectHierarchyModel::setSubjectHierarchyNode(vtkMRMLSubjectHierarchy
     shNode->AddObserver(vtkMRMLSubjectHierarchyNode::SubjectHierarchyItemAboutToBeRemovedEvent, d->CallBack, +10.0);
     shNode->AddObserver(vtkMRMLSubjectHierarchyNode::SubjectHierarchyItemRemovedEvent, d->CallBack, -10.0);
     shNode->AddObserver(vtkMRMLSubjectHierarchyNode::SubjectHierarchyItemModifiedEvent, d->CallBack, -10.0);
+    shNode->AddObserver(vtkMRMLSubjectHierarchyNode::SubjectHierarchyItemTransformModifiedEvent, d->CallBack, -10.0);
+    shNode->AddObserver(vtkMRMLSubjectHierarchyNode::SubjectHierarchyItemDisplayModifiedEvent, d->CallBack, -10.0);
     shNode->AddObserver(vtkMRMLSubjectHierarchyNode::SubjectHierarchyItemReparentedEvent, d->CallBack, -10.0);
     }
 }
@@ -643,10 +642,13 @@ bool qMRMLSubjectHierarchyModel::moveToRow(vtkIdType itemID, int newRow)
 QMimeData* qMRMLSubjectHierarchyModel::mimeData(const QModelIndexList& indexes)const
 {
   Q_D(const qMRMLSubjectHierarchyModel);
+  d->DraggedSubjectHierarchyItems.clear();
+  const_cast<qMRMLSubjectHierarchyModelPrivate*>(d)->IsDroppedInside = false;
   if (!indexes.size())
     {
     return nullptr;
     }
+  QList<QUrl> selectedShItemUrls;
   QModelIndexList allColumnsIndexes;
   foreach(const QModelIndex& index, indexes)
     {
@@ -657,22 +659,30 @@ QMimeData* qMRMLSubjectHierarchyModel::mimeData(const QModelIndexList& indexes)c
       }
     if (index.column() == 0) // Prevent duplicate IDs
       {
-      d->DraggedSubjectHierarchyItems << this->subjectHierarchyItemFromIndex(index);
+      vtkIdType itemId = this->subjectHierarchyItemFromIndex(index);
+      d->DraggedSubjectHierarchyItems << itemId;
+      QString urlString = QString("mrml://scene/subjecthierarchy/item?id=%1").arg(itemId);
+      selectedShItemUrls.push_back(QUrl(urlString));
       }
     }
   // Remove duplicates (mixes up order of items)
   allColumnsIndexes = allColumnsIndexes.toSet().toList();
 
-  return this->QStandardItemModel::mimeData(allColumnsIndexes);
+  QMimeData* mimeData = this->QStandardItemModel::mimeData(allColumnsIndexes);
+  mimeData->setUrls(selectedShItemUrls);
+
+  return mimeData;
 }
 
 //------------------------------------------------------------------------------
 bool qMRMLSubjectHierarchyModel::dropMimeData( const QMimeData *data, Qt::DropAction action,
                                             int row, int column, const QModelIndex &parent )
 {
+  Q_D(qMRMLSubjectHierarchyModel);
   Q_UNUSED(column);
   // We want to do drag&drop only into the first item of a line (and not on a
   // random column.
+  d->IsDroppedInside = true;
   bool res = this->Superclass::dropMimeData(
     data, action, row, 0, parent.sibling(parent.row(), 0));
   return res;
@@ -785,10 +795,20 @@ void qMRMLSubjectHierarchyModel::updateFromSubjectHierarchy()
     d->RowCache[d->SubjectHierarchyNode->GetSceneItemID()] = this->subjectHierarchySceneItem()->index();
     }
 
-
   // Get all subject hierarchy items
   std::vector<vtkIdType> allItemIDs;
   d->SubjectHierarchyNode->GetItemChildren(d->SubjectHierarchyNode->GetSceneItemID(), allItemIDs, true);
+
+  // Update all items
+  for (std::vector<vtkIdType>::iterator itemIt=allItemIDs.begin(); itemIt!=allItemIDs.end(); ++itemIt)
+    {
+    vtkIdType itemID = (*itemIt);
+    for (int col=0; col<this->columnCount(); ++col)
+      {
+      QStandardItem* item = this->itemFromSubjectHierarchyItem(itemID, col);
+      this->updateItemFromSubjectHierarchyItem(item, itemID, col);
+      }
+    }
 
   // Update expanded states (during inserting the update calls did not find valid indices, so
   // expand and collapse statuses were not set in the tree view)
@@ -1425,6 +1445,8 @@ void qMRMLSubjectHierarchyModel::onEvent(
       sceneModel->onSubjectHierarchyItemRemoved(itemID);
       break;
     case vtkMRMLSubjectHierarchyNode::SubjectHierarchyItemModifiedEvent:
+    case vtkMRMLSubjectHierarchyNode::SubjectHierarchyItemTransformModifiedEvent:
+    case vtkMRMLSubjectHierarchyNode::SubjectHierarchyItemDisplayModifiedEvent:
     case vtkMRMLSubjectHierarchyNode::SubjectHierarchyItemReparentedEvent:
       sceneModel->onSubjectHierarchyItemModified(itemID);
       break;
@@ -1590,7 +1612,7 @@ void qMRMLSubjectHierarchyModel::onItemChanged(QStandardItem* item)
     }
   // When a drag&drop occurs, the order of the items called with onItemChanged is
   // random, it could be the item in column 1 then the item in column 0
-  if (d->DraggedSubjectHierarchyItems.count())
+  if (!d->DraggedSubjectHierarchyItems.empty())
     {
     // Item changed will be triggered multiple times in course of the drag&drop event. Setting this flag
     // makes sure the final onItemChanged with the collected DraggedSubjectHierarchyItems is called only once.
@@ -1617,12 +1639,16 @@ void qMRMLSubjectHierarchyModel::delayedItemChanged()
       draggedShItemID, this->itemFromSubjectHierarchyItem(draggedShItemID) );
     }
 
-  // Re-select dropped items
-  emit requestSelectItems(d->DraggedSubjectHierarchyItems);
-
+  // Re-select dropped items.
+  // Only needed if drag-and-dropping inside the widget (reparenting removes selection).
+  if (d->IsDroppedInside)
+    {
+    emit requestSelectItems(d->DraggedSubjectHierarchyItems);
+    }
   // Reset state
   d->DraggedSubjectHierarchyItems.clear();
   d->DelayedItemChangedInvoked = false;
+  d->IsDroppedInside = false;
 }
 
 //------------------------------------------------------------------------------

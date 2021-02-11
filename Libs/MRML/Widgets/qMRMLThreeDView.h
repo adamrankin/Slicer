@@ -27,8 +27,10 @@
 
 #include "qMRMLWidgetsExport.h"
 
+class QDropEvent;
 class qMRMLThreeDViewPrivate;
 class vtkMRMLAbstractDisplayableManager;
+class vtkMRMLCameraNode;
 class vtkMRMLScene;
 class vtkMRMLViewNode;
 class vtkCollection;
@@ -80,6 +82,9 @@ public:
                                bool resetTranslation = true,
                                bool resetDistance = true);
 
+  /// Returns camera node of the 3D view
+  Q_INVOKABLE vtkMRMLCameraNode* cameraNode();
+
   /// Set cursor in the view area
   Q_INVOKABLE void setViewCursor(const QCursor &);
 
@@ -88,6 +93,9 @@ public:
 
   /// Set default cursor in the view area
   Q_INVOKABLE void setDefaultViewCursor(const QCursor &cursor);
+
+  void dragEnterEvent(QDragEnterEvent* event) override;
+  void dropEvent(QDropEvent* event) override;
 
 public slots:
 

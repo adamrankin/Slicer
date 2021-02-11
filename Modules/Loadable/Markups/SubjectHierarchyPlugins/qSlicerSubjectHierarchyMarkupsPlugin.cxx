@@ -151,7 +151,8 @@ double qSlicerSubjectHierarchyMarkupsPlugin::canAddNodeToSubjectHierarchy(
            node->IsA("vtkMRMLMarkupsAngleNode") ||
            node->IsA("vtkMRMLMarkupsCurveNode") ||
            node->IsA("vtkMRMLMarkupsClosedCurveNode") ||
-           node->IsA("vtkMRMLMarkupsPlaneNode")
+           node->IsA("vtkMRMLMarkupsPlaneNode") ||
+           node->IsA("vtkMRMLMarkupsROINode")
            )
     {
     // Item is a markup
@@ -183,8 +184,8 @@ double qSlicerSubjectHierarchyMarkupsPlugin::canOwnSubjectHierarchyItem(vtkIdTyp
        associatedNode->IsA("vtkMRMLMarkupsAngleNode") ||
        associatedNode->IsA("vtkMRMLMarkupsCurveNode") ||
        associatedNode->IsA("vtkMRMLMarkupsClosedCurveNode") ||
-       associatedNode->IsA("vtkMRMLMarkupsPlaneNode"))
-    )
+       associatedNode->IsA("vtkMRMLMarkupsPlaneNode") ||
+       associatedNode->IsA("vtkMRMLMarkupsROINode")))
     {
     // Item is a markup
     return 0.5;
@@ -249,6 +250,10 @@ QIcon qSlicerSubjectHierarchyMarkupsPlugin::icon(vtkIdType itemID)
   else if (node->IsA("vtkMRMLMarkupsPlaneNode"))
     {
     return QIcon(":Icons/MarkupsPlane.png");
+    }
+  else if (node->IsA("vtkMRMLMarkupsROINode"))
+    {
+    return QIcon(":Icons/MarkupsROI.png");
     }
   return QIcon();
 }
@@ -362,7 +367,6 @@ QColor qSlicerSubjectHierarchyMarkupsPlugin::getDisplayColor(vtkIdType itemID, Q
   if (!displayNode)
     {
     // this is normal when the markups node is being created
-    qDebug() << Q_FUNC_INFO << ": No display node";
     return QColor(0,0,0,0);
     }
 

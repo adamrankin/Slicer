@@ -44,7 +44,7 @@
 #include "vtkMRMLDisplayableManagerExport.h"
 #include "vtkObject.h"
 #include "vtkSmartPointer.h"
-
+#include "vtkWeakPointer.h"
 #include <vector>
 
 class vtkMRMLAbstractViewNode;
@@ -156,7 +156,7 @@ public:
   virtual void Leave(vtkMRMLInteractionEventData* eventData);
 
   void SetRenderer(vtkRenderer* renderer);
-  vtkGetMacro(Renderer, vtkRenderer*);
+  vtkRenderer* GetRenderer();
 
   vtkMRMLInteractionNode* GetInteractionNode();
 
@@ -175,6 +175,10 @@ public:
   // Acknowledge rendering request (rendering completed)
   virtual void NeedToRenderOff();
 
+  virtual vtkWidgetEventTranslator* GetEventTranslator(int widgetState);
+
+  virtual int GetNumberOfEventTranslators();
+
 protected:
   vtkMRMLAbstractWidget();
   ~vtkMRMLAbstractWidget() override;
@@ -187,9 +191,9 @@ protected:
   unsigned long TranslateInteractionEventToWidgetEvent(
     vtkWidgetEventTranslator* translator, vtkMRMLInteractionEventData* eventData);
 
-  vtkRenderer* Renderer;
+  vtkWeakPointer<vtkRenderer> Renderer;
 
-  vtkMRMLApplicationLogic* ApplicationLogic;
+  vtkWeakPointer<vtkMRMLApplicationLogic> ApplicationLogic;
 
   // Translates interaction event to widget event.
   // In the future, a vector of event translators could be added

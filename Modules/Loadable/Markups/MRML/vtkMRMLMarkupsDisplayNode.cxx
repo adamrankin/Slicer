@@ -29,12 +29,20 @@
 #include <vtkNew.h>
 #include <vtkObjectFactory.h>
 #include <vtkPiecewiseFunction.h>
+#include <vtkPointData.h>
+#include <vtkTextProperty.h>
+#include <vtksys/SystemTools.hxx>
 
 // STL includes
 #include <sstream>
 
 const char* vtkMRMLMarkupsDisplayNode::LineColorNodeReferenceRole = "lineColor";
 const char* vtkMRMLMarkupsDisplayNode::LineColorNodeReferenceMRMLAttributeName = "lineColorNodeRef";
+
+static const int SHADOW_H_OFFSET_INDEX = 0;
+static const int SHADOW_V_OFFSET_INDEX = 1;
+static const int SHADOW_BLUR_RADIUS_INDEX = 2;
+static const int SHADOW_COLOR_INDEX = 3;
 
 //----------------------------------------------------------------------------
 vtkMRMLNodeNewMacro(vtkMRMLMarkupsDisplayNode);
@@ -84,6 +92,10 @@ vtkMRMLMarkupsDisplayNode::vtkMRMLMarkupsDisplayNode()
 
   this->PropertiesLabelVisibility = true;
   this->PointLabelsVisibility = false;
+  this->FillVisibility = true;
+  this->OutlineVisibility = true;
+  this->FillOpacity = 0.5;
+  this->OutlineOpacity = 1.0;
 
   // Set active component defaults for mouse (identified by empty string)
   this->ActiveComponents[GetDefaultContextName()] = ComponentInfo();
@@ -98,6 +110,20 @@ vtkMRMLMarkupsDisplayNode::vtkMRMLMarkupsDisplayNode()
   this->LineColorFadingSaturation = 1.;
   this->LineColorFadingHueOffset = 0.;
 
+  this->OccludedVisibility = false;
+  this->OccludedOpacity = 0.3;
+
+  // Text apperarance
+  this->TextProperty = nullptr;
+  vtkNew<vtkTextProperty> textProperty;
+  textProperty->SetBackgroundOpacity(0.0);
+  textProperty->SetFontSize(5);
+  vtkSetAndObserveMRMLObjectMacro(this->TextProperty, textProperty);
+
+  this->ActiveColor[0] = 0.4; // bright green
+  this->ActiveColor[1] = 1.0;
+  this->ActiveColor[2] = 0.0;
+
   this->HandlesInteractive = false;
 
   // Line color node
@@ -110,7 +136,10 @@ vtkMRMLMarkupsDisplayNode::vtkMRMLMarkupsDisplayNode()
 }
 
 //----------------------------------------------------------------------------
-vtkMRMLMarkupsDisplayNode::~vtkMRMLMarkupsDisplayNode() = default;
+vtkMRMLMarkupsDisplayNode::~vtkMRMLMarkupsDisplayNode()
+{
+  vtkSetAndObserveMRMLObjectMacro(this->TextProperty, nullptr);
+}
 
 //----------------------------------------------------------------------------
 void vtkMRMLMarkupsDisplayNode::WriteXML(ostream& of, int nIndent)
@@ -139,13 +168,24 @@ void vtkMRMLMarkupsDisplayNode::WriteXML(ostream& of, int nIndent)
   vtkMRMLWriteXMLFloatMacro(lineColorFadingSaturation, LineColorFadingSaturation);
   vtkMRMLWriteXMLFloatMacro(lineColorFadingHueOffset, LineColorFadingHueOffset);
   vtkMRMLWriteXMLBooleanMacro(handlesInteractive, HandlesInteractive);
+  vtkMRMLWriteXMLBooleanMacro(fillVisibility, FillVisibility);
+  vtkMRMLWriteXMLBooleanMacro(outlineVisibility, OutlineVisibility);
+  vtkMRMLWriteXMLFloatMacro(fillOpacity, FillOpacity);
+  vtkMRMLWriteXMLFloatMacro(outlineOpacity, OutlineOpacity);
+  vtkMRMLWriteXMLBooleanMacro(occludedVisibility, OccludedVisibility);
+  vtkMRMLWriteXMLFloatMacro(occludedOpacity, OccludedOpacity);
+  if (this->TextProperty)
+    {
+    vtkMRMLWriteXMLStdStringMacro(textProperty, TextPropertyAsString);
+    }
+  vtkMRMLWriteXMLVectorMacro(activeColor, ActiveColor, double, 3);
   vtkMRMLWriteXMLEndMacro();
 }
 
 //----------------------------------------------------------------------------
 void vtkMRMLMarkupsDisplayNode::ReadXMLAttributes(const char** atts)
 {
-  int disabledModify = this->StartModify();
+  MRMLNodeModifyBlocker blocker(this);
 
   Superclass::ReadXMLAttributes(atts);
 
@@ -171,6 +211,14 @@ void vtkMRMLMarkupsDisplayNode::ReadXMLAttributes(const char** atts)
   vtkMRMLReadXMLFloatMacro(lineColorFadingSaturation, LineColorFadingSaturation);
   vtkMRMLReadXMLFloatMacro(lineColorFadingHueOffset, LineColorFadingHueOffset);
   vtkMRMLReadXMLBooleanMacro(handlesInteractive, HandlesInteractive);
+  vtkMRMLReadXMLBooleanMacro(fillVisibility, FillVisibility);
+  vtkMRMLReadXMLBooleanMacro(outlineVisibility, OutlineVisibility);
+  vtkMRMLReadXMLFloatMacro(fillOpacity, FillOpacity);
+  vtkMRMLReadXMLFloatMacro(outlineOpacity, OutlineOpacity);
+  vtkMRMLReadXMLBooleanMacro(occludedVisibility, OccludedVisibility);
+  vtkMRMLReadXMLFloatMacro(occludedOpacity, OccludedOpacity);
+  vtkMRMLReadXMLStdStringMacro(textProperty, TextPropertyFromString);
+  vtkMRMLReadXMLVectorMacro(activeColor, ActiveColor, double, 3);
   vtkMRMLReadXMLEndMacro();
 
   // Fix up legacy markups fiducial nodes
@@ -198,8 +246,6 @@ void vtkMRMLMarkupsDisplayNode::ReadXMLAttributes(const char** atts)
         }
       }
     }
-
-  this->EndModify(disabledModify);
 }
 
 
@@ -231,6 +277,14 @@ void vtkMRMLMarkupsDisplayNode::CopyContent(vtkMRMLNode* anode, bool deepCopy/*=
   vtkMRMLCopyFloatMacro(LineColorFadingSaturation);
   vtkMRMLCopyFloatMacro(LineColorFadingHueOffset);
   vtkMRMLCopyBooleanMacro(HandlesInteractive);
+  vtkMRMLCopyBooleanMacro(FillVisibility);
+  vtkMRMLCopyBooleanMacro(OutlineVisibility);
+  vtkMRMLCopyFloatMacro(FillOpacity);
+  vtkMRMLCopyFloatMacro(OutlineOpacity);
+  vtkMRMLCopyBooleanMacro(OccludedVisibility);
+  vtkMRMLCopyFloatMacro(OccludedOpacity);
+  this->TextProperty->ShallowCopy(this->SafeDownCast(copySourceNode)->GetTextProperty());
+  vtkMRMLCopyVectorMacro(ActiveColor, double, 3);
   vtkMRMLCopyEndMacro();
 }
 
@@ -275,6 +329,7 @@ const char* vtkMRMLMarkupsDisplayNode::GetGlyphTypeAsString(int id)
   case Vertex2D: return "Vertex2D";
   case Dash2D: return "Dash2D";
   case Cross2D: return "Cross2D";
+  case CrossDot2D: return "CrossDot2D";
   case ThickCross2D: return "ThickCross2D";
   case Triangle2D: return "Triangle2D";
   case Square2D: return "Square2D";
@@ -285,7 +340,6 @@ const char* vtkMRMLMarkupsDisplayNode::GetGlyphTypeAsString(int id)
   case HookedArrow2D: return "HookedArrow2D";
   case StarBurst2D: return "StarBurst2D";
   case Sphere3D: return "Sphere3D";
-  case Diamond3D: return "Diamond3D";
   case GlyphTypeInvalid:
   default:
     // invalid id
@@ -405,6 +459,14 @@ void vtkMRMLMarkupsDisplayNode::PrintSelf(ostream& os, vtkIndent indent)
   vtkMRMLPrintFloatMacro(LineColorFadingSaturation);
   vtkMRMLPrintFloatMacro(LineColorFadingHueOffset);
   vtkMRMLPrintBooleanMacro(HandlesInteractive);
+  vtkMRMLPrintBooleanMacro(FillVisibility);
+  vtkMRMLPrintBooleanMacro(OutlineVisibility);
+  vtkMRMLPrintFloatMacro(FillOpacity);
+  vtkMRMLPrintFloatMacro(OutlineOpacity);
+  vtkMRMLPrintBooleanMacro(OccludedVisibility);
+  vtkMRMLPrintFloatMacro(OccludedOpacity);
+  vtkMRMLPrintStdStringMacro(TextPropertyAsString);
+  vtkMRMLPrintVectorMacro(ActiveColor, double, 3);
   vtkMRMLPrintEndMacro();
 }
 
@@ -414,6 +476,16 @@ void vtkMRMLMarkupsDisplayNode::ProcessMRMLEvents(vtkObject *caller,
                                                   void *callData)
 {
   Superclass::ProcessMRMLEvents(caller, event, callData);
+  if (caller == this->TextProperty)
+    {
+    switch (event)
+      {
+      case vtkCommand::ModifiedEvent:
+        this->InvokeEvent(event);
+      default:
+        break;
+      }
+    }
   return;
 }
 
@@ -426,7 +498,7 @@ void vtkMRMLMarkupsDisplayNode::UpdateScene(vtkMRMLScene *scene)
 //---------------------------------------------------------------------------
 int  vtkMRMLMarkupsDisplayNode::GlyphTypeIs3D(int glyphType)
 {
-  if (glyphType >= vtkMRMLMarkupsDisplayNode::Sphere3D)
+  if (glyphType == vtkMRMLMarkupsDisplayNode::Sphere3D)
     {
     return 1;
     }
@@ -664,4 +736,271 @@ int vtkMRMLMarkupsDisplayNode::GetActiveControlPoint(std::string context)
 vtkMRMLMarkupsNode* vtkMRMLMarkupsDisplayNode::GetMarkupsNode()
 {
   return vtkMRMLMarkupsNode::SafeDownCast(this->GetDisplayableNode());
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsDisplayNode::SetTextPropertyFromString(std::string textPropertyString)
+{
+  if (textPropertyString.empty())
+    {
+    vtkErrorMacro("SetTextPropertyFromString: Invalid text property string");
+    return;
+    }
+
+  std::string currentTextPropertyString = this->GetTextPropertyAsString(this->TextProperty);
+  if (textPropertyString == currentTextPropertyString)
+    {
+    return;
+    }
+
+  MRMLNodeModifyBlocker blocker(this);
+  this->UpdateTextPropertyFromString(textPropertyString, this->TextProperty);
+  this->Modified();
+}
+
+//---------------------------------------------------------------------------
+std::string vtkMRMLMarkupsDisplayNode::GetTextPropertyAsString()
+{
+  return this->GetTextPropertyAsString(this->GetTextProperty());
+}
+
+//---------------------------------------------------------------------------
+std::string vtkMRMLMarkupsDisplayNode::GetTextPropertyAsString(vtkTextProperty* textProperty)
+{
+  if (!textProperty)
+    {
+    return "";
+    }
+
+  std::stringstream ss;
+  ss << "font-family:" << textProperty->GetFontFamilyAsString() << ";";
+  if (textProperty->GetFontFile())
+    {
+    ss << "font-file:" << textProperty->GetFontFile() << ";";
+    }
+  ss << "font-size:" << textProperty->GetFontSize() << "px;";
+  ss << "font-style:" << (textProperty->GetItalic() ? "italic" : "normal") << ";";
+  ss << "font-weight:" << (textProperty->GetBold() ? "bold" : "normal") << ";";
+  ss << "color:rgba(";
+  for (int i = 0; i < 3; ++i)
+    {
+    ss << static_cast<int>(std::floor(textProperty->GetColor()[i] * 255)) << ",";
+    }
+  ss << textProperty->GetOpacity() << ");";
+  ss << "background-color:rgba(";
+  for (int i = 0; i < 3; ++i)
+    {
+    ss << static_cast<int>(std::floor(textProperty->GetBackgroundColor()[i] * 255))  << ",";
+    }
+  ss << textProperty->GetBackgroundOpacity() << ");";
+  ss << "border-width:" << textProperty->GetFrameWidth() << "px;";
+  ss << "border-color:rgba(";
+  for (int i = 0; i < 3; ++i)
+    {
+    ss << static_cast<int>(std::floor(textProperty->GetFrameColor()[i] * 255)) << ",";
+    }
+  ss << (textProperty->GetFrame() ? "1.0" : "0.0") << ");";
+  ss << "text-shadow:";
+  ss << textProperty->GetShadowOffset()[0] << "px " << textProperty->GetShadowOffset()[0] << "px ";
+  ss << "0px "; // blur radius
+  ss << "rgba(0,0,0," << (textProperty->GetShadow() ? "1.0" : "0.0") << ");";
+  return ss.str();
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsDisplayNode::UpdateTextPropertyFromString(std::string inputString, vtkTextProperty* textProperty)
+{
+  if (!textProperty)
+    {
+    return ;
+    }
+
+#if VTK_MAJOR_VERSION >= 9 || (VTK_MAJOR_VERSION >= 8 && VTK_MINOR_VERSION >= 90)
+  std::vector<std::string> textProperties = vtksys::SystemTools::SplitString(inputString, ';');
+  for (std::string textPropertyString : textProperties)
+    {
+    std::vector<std::string> keyValue = vtksys::SystemTools::SplitString(textPropertyString, ':');
+#else
+  std::vector<vtksys::String> textProperties = vtksys::SystemTools::SplitString(inputString, ';');
+  for (vtksys::String textPropertyString : textProperties)
+    {
+    std::vector<vtksys::String> keyValue = vtksys::SystemTools::SplitString(textPropertyString, ':');
+#endif
+    if (keyValue.empty())
+      {
+      continue;
+      }
+    std::string key = keyValue[0];
+
+    if (keyValue.size() < 2)
+      {
+      continue;
+      }
+
+    std::string value = keyValue[1];
+    if (key == "font-family")
+      {
+      textProperty->SetFontFamilyAsString(value.c_str());
+      }
+    else if (key == "font-file")
+      {
+      textProperty->SetFontFile(value.c_str());
+      }
+    else if (key == "font-size")
+      {
+      size_t pos = value.find("px");
+      std::stringstream ss;
+      vtkVariant size = vtkVariant(value.substr(0, pos));
+      textProperty->SetFontSize(size.ToInt());
+      }
+    else if (key == "font-style")
+      {
+      textProperty->SetItalic(value == "italic");
+      }
+    else if (key == "font-weight")
+      {
+      textProperty->SetBold(value == "bold");
+      }
+    else if (key == "color")
+      {
+      double colorF[4] = { 0.0, 0.0, 0.0, 0.0};
+      vtkMRMLMarkupsDisplayNode::GetColorFromString(value, colorF);
+      textProperty->SetColor(colorF);
+      textProperty->SetOpacity(colorF[3]);
+      }
+    else if (key == "background-color")
+      {
+      double colorF[4] = { 0.0, 0.0, 0.0, 0.0 };
+      vtkMRMLMarkupsDisplayNode::GetColorFromString(value, colorF);
+      textProperty->SetBackgroundColor(colorF);
+      textProperty->SetBackgroundOpacity(colorF[3]);
+      }
+    else if (key == "border-color")
+      {
+      double colorF[4] = { 0.0, 0.0, 0.0, 0.0 };
+      vtkMRMLMarkupsDisplayNode::GetColorFromString(value, colorF);
+      textProperty->SetFrameColor(colorF);
+      textProperty->SetFrame(colorF[3] > 0.0);
+      }
+    else if (key == "border-width")
+      {
+      size_t pos = value.find("px");
+      std::stringstream ss;
+      vtkVariant size = vtkVariant(value.substr(0, pos));
+      textProperty->SetFrameWidth(size.ToInt());
+      }
+    else if (key == "text-shadow")
+      {
+#if VTK_MAJOR_VERSION >= 9 || (VTK_MAJOR_VERSION >= 8 && VTK_MINOR_VERSION >= 90)
+      std::vector<std::string> shadowProperties = vtksys::SystemTools::SplitString(textPropertyString, ' ');
+#else
+      std::vector<vtksys::String> shadowProperties = vtksys::SystemTools::SplitString(textPropertyString, ' ');
+#endif
+      int shadowOffset[2] = { 0,0 };
+      int shadowPropertyIndex = 0;
+#if VTK_MAJOR_VERSION >= 9 || (VTK_MAJOR_VERSION >= 8 && VTK_MINOR_VERSION >= 90)
+      for (std::string shadowProperty : shadowProperties)
+#else
+      for (vtksys::String shadowProperty : shadowProperties)
+#endif
+        {
+        if (shadowPropertyIndex == SHADOW_H_OFFSET_INDEX || shadowPropertyIndex == SHADOW_V_OFFSET_INDEX)
+          {
+          size_t pos = shadowProperty.find("px");
+          std::stringstream ss;
+          vtkVariant offset = vtkVariant(shadowProperty.substr(0, pos));
+          if (shadowPropertyIndex == SHADOW_H_OFFSET_INDEX)
+            {
+            shadowOffset[0] = offset.ToInt();
+            }
+          else
+            {
+            shadowOffset[1] = offset.ToInt();
+            }
+          }
+        else if (shadowPropertyIndex == SHADOW_COLOR_INDEX)
+          {
+          // The shadow color in vtkTextProperty is actually just calculated from the text color (either black or white)
+          // and cannot be changed.
+          // We use the opacity channel to determine if the shadow should be displayed.
+          double shadowColorF[4] = { 0.0, 0.0, 0.0, 0.0 };
+          vtkMRMLMarkupsDisplayNode::GetColorFromString(shadowProperty, shadowColorF);
+          textProperty->SetShadow(shadowColorF[3] > 0.0);
+          }
+        ++shadowPropertyIndex;
+        }
+        textProperty->SetShadowOffset(shadowOffset);
+      }
+    }
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsDisplayNode::GetColorFromString(const std::string& inputString, double colorF[4])
+{
+  std::string colorString = inputString;
+  std::string prefixString = "rgba(";
+
+  size_t pos = colorString.find(prefixString);
+  if (pos != std::string::npos)
+    {
+    colorString = colorString.substr(pos + prefixString.size(), colorString.size());
+    }
+
+  pos = colorString.find(")");
+  if (pos != std::string::npos)
+    {
+    colorString = colorString.substr(0, pos);
+    }
+
+#if VTK_MAJOR_VERSION >= 9 || (VTK_MAJOR_VERSION >= 8 && VTK_MINOR_VERSION >= 90)
+  std::vector<std::string> componentStrings = vtksys::SystemTools::SplitString(colorString, ',');
+#else
+  std::vector<vtksys::String> componentStrings = vtksys::SystemTools::SplitString(colorString, ',');
+#endif
+  for (int i = 0; i < 4 && i <static_cast<int>(componentStrings.size()); ++i)
+    {
+    double componentF = vtkVariant(componentStrings[i]).ToDouble();
+    if (i != 3)
+      {
+      componentF /= 255.0;
+      }
+    colorF[i] = componentF;
+    }
+}
+
+//-----------------------------------------------------------
+vtkDataSet* vtkMRMLMarkupsDisplayNode::GetScalarDataSet()
+{
+  if (this->GetMarkupsNode())
+    {
+    return this->GetMarkupsNode()->GetCurveWorld();
+    }
+  return nullptr;
+}
+
+//-----------------------------------------------------------
+vtkDataArray* vtkMRMLMarkupsDisplayNode::GetActiveScalarArray()
+{
+  if (this->GetActiveScalarName() == nullptr || strcmp(this->GetActiveScalarName(),"") == 0)
+    {
+    return nullptr;
+    }
+  if (!this->GetMarkupsNode())
+    {
+    return nullptr;
+    }
+  if (!this->GetMarkupsNode()->GetCurveWorld())
+    {
+    return nullptr;
+    }
+
+  return this->GetMarkupsNode()->GetCurveWorld()->GetPointData()->GetArray(this->GetActiveScalarName());
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLMarkupsDisplayNode::UpdateAssignedAttribute()
+{
+  this->UpdateScalarRange();
+
+  this->GetMarkupsNode()->UpdateAssignedAttribute();
 }

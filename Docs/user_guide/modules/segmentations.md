@@ -41,6 +41,14 @@ Tip: To show the segmentation in 3D, go to `Segmentations` module and in `Repres
 - In `Description` column choose `Segmentation`
 - Click `OK`
 
+If the model contains very thin and delicate structures then default resolution for binary labelmap representation may be not sufficient for editing. Default resolution is computed so that the labelmap contains a total of approximately 256x256x256 voxels. To make the resolution finer:
+- Go to Segmentations module
+- In Representations section, click Binary labelmap -> Create, then Update
+- In the displayed popup:
+  - In Conversion path section, click Closed surface -> Binary labelmap
+  - In Conversion parameters section, set oversampling factor to 2 (if this is not enough then you can try 2.5, 3, 4, ...) - larger values increase more memory usage and computation time (oversampling factor of 2x increases memory usage by 2^3 = 8x).
+  - Click Convert
+
 Other mesh file formats can be loaded as model and then converted to segmentation node:
 - Drag-and-drop the volume file to the application window (or use menu: `File` / `Add Data`, then select the file)
 - Click `OK`
@@ -75,6 +83,21 @@ To force saving segmentation as a 3D volume, export it to a labelmap volume by r
 
 For advanced export options, `Segmentations` module's `Export/import models and labelmaps` section can be used. If exported segmentation geometry (origin, spacing, axis directions, extents) must exactly match another volume's then then choose that volume as `Reference volume` in `Advanced` section.
 
+### Export segmentation to labelmap volume file
+
+If master representation of a a segmentation node is binary labelmap then the segmentation will be saved in standard NRRD file format. This is the recommended way of saving segmentation volumes, as it saves additional metadata (segment names, colors, DICOM terminology) in the image file in custom fields and allows saving of overlapping segments.
+
+For exporting segmentation as NRRD or NIFTI file for external software that uses 3D labelmap volume file + color table file for segmentation storage:
+
+- Open `Export to files` section in `Segmentations` module (or in `Segment editor` module: choose `Export to files`, in the drop-down menu of `Segmentations` button)
+- In `File format` selector choose `NRRD` or `NIFTI`. NRRD format is recommended, as it is a simple, general-purpose file format. For neuroimaging, NIFTI file format may be a better choice, as it is the most commonly used research file format in that field.
+- Optional: choose Reference volume if you want your segmentation to match a selected volume's geometry (origin, spacing, axis directions) instead of the current segmentation geometry
+- Optional: check `Use color table values` checkbox and select a color table to set voxel values in the exported files from values specified in the color table. Without that, voxel values are based on the order of segments in the segmentation node.
+- Set additional options (destination folder, compression, etc.) as needed
+- Click `Export`
+
+Labelmap volumes can be created in any other formats by [exporting segmentation to labelmap volume](segmentations.html#export-segmentation-to-labelmap-volume) then in application menu, choose `File` / `Save`.
+
 
 ### Create new representation in segmentation (conversion)
 
@@ -94,55 +117,55 @@ To re-convert an existing representation (to use different conversion path or pa
 See Script repository's [Segmentations section](https://www.slicer.org/wiki/Documentation/Nightly/ScriptRepository#Segmentations) for examples.
 
 ### DICOM export
--  The master representation is used when exporting into DICOM
--  DICOM RT structure set export is available if `SlicerRT` extension is installed
--  DICOM Segmentation Object export if `QuantitativeReporting` extension is installed
-
+- The master representation is used when exporting into DICOM, therefore you need to select a master volume, create binary labelmap representation and set it as master
+- DICOM Segmentation Object export if `QuantitativeReporting` extension is installed
+- Legacy DICOM RT structure set export is available if `SlicerRT` extension is installed. RT structure sets are not recommended for storing segmentations, as they cannot store arbitrarily complex 3D shapes.
+- Follow [these instructions](dicom.html#export-data-from-the-scene-to-dicom-database) for exporting data in DICOM format.
 
 ## Panels and their use
 
--  Segments table
-    -  Add/remove segments
-    -  Edit selected: takes user to [Segment Editor](SegmentEditor) module
-    -  Set visibility and per-segment display settings, opacity, color, segment name
--  Display
-    -  Segmentations-wide display settings (not per-segment!): visibility, opacity (will be multiplied with per-segment opacity for display)
-    -  Views: Individual views to show the active segmentation in
-    -  Slice intersection thickness
-    -  Representation in 3D/2D views: The representation to be shown in the 3D and 2D views. Useful if there are multiple representations available, for example if we want to show the closed surface in the 3D view but the labelmap in the slice views
--  Representations
-    -  List of supported representations and related operations 
-    -  The already existing representations have a green tick, the master representation (that is the source of all conversions and the representation that can be edited) a gold star
-    -  The buttons in each row can be used to create, remove, update a representation
-        -  Advanced conversion is possible (to use the non-default path or conversion parameters) by long-pressing the Create or Update button
-        -  Existing representations can be made master by clicking Make master. The master representation is used as source for conversions, it is the one that can be edited, and saved to disk
--  Copy/move (import/export)
-    -  Left panel lists the segments in the active segmentation
-    -  Right panel shows the external data container
-    -  The arrow buttons van be used to copy (with plus sign) or move (no plus sign) segments between the segmentation and the external node
-    -  New labelmap or model can be created by clicking the appropriate button on the top of the right panel
-    -  Multiple segments can be exported into a labelmap. In case of overlapping segments, the subsequent segments will overwrite the previous ones!
+- Segments table
+    - Add/remove segments
+    - Edit selected: takes user to [Segment Editor](SegmentEditor) module
+    - Set visibility and per-segment display settings, opacity, color, segment name
+- Display
+    - Segmentations-wide display settings (not per-segment!): visibility, opacity (will be multiplied with per-segment opacity for display)
+    - Views: Individual views to show the active segmentation in
+    - Slice intersection thickness
+    - Representation in 3D/2D views: The representation to be shown in the 3D and 2D views. Useful if there are multiple representations available, for example if we want to show the closed surface in the 3D view but the labelmap in the slice views
+- Representations
+    - List of supported representations and related operations 
+    - The already existing representations have a green tick, the master representation (that is the source of all conversions and the representation that can be edited) a gold star
+    - The buttons in each row can be used to create, remove, update a representation
+        - Advanced conversion is possible (to use the non-default path or conversion parameters) by long-pressing the Create or Update button
+        - Existing representations can be made master by clicking Make master. The master representation is used as source for conversions, it is the one that can be edited, and saved to disk
+- Copy/move (import/export)
+    - Left panel lists the segments in the active segmentation
+    - Right panel shows the external data container
+    - The arrow buttons van be used to copy (with plus sign) or move (no plus sign) segments between the segmentation and the external node
+    - New labelmap or model can be created by clicking the appropriate button on the top of the right panel
+    - Multiple segments can be exported into a labelmap. In case of overlapping segments, the subsequent segments will overwrite the previous ones!
 
 **Subject hierarchy**
--  Segmentations are shown in subject hierarchy as any other node, with the exception that the contained segments are in a "virtual branch".
-    -  The segments can be moved between segmentations, but drag&drop to anywhere other than under another segmentation is not allowed
--  Special subject hierarchy features for segmentations
-    -  Create representation: Create the chosen representation using the default path
--  Special subject hierarchy features for segments
-    -  Show only this segment: Useful if only one segment needs to be shown and there are many, so clicking the eye buttons woud take a long time
-    -  Show all segments
+- Segmentations are shown in subject hierarchy as any other node, with the exception that the contained segments are in a "virtual branch".
+    - The segments can be moved between segmentations, but drag&drop to anywhere other than under another segmentation is not allowed
+- Special subject hierarchy features for segmentations
+    - Create representation: Create the chosen representation using the default path
+- Special subject hierarchy features for segments
+    - Show only this segment: Useful if only one segment needs to be shown and there are many, so clicking the eye buttons woud take a long time
+    - Show all segments
 
 ## Tutorials
 
--  [Segmentation tutorials](https://www.slicer.org/wiki/Documentation/Nightly/Training#Segmentation)
+- [Segmentation tutorials](https://www.slicer.org/wiki/Documentation/Nightly/Training#Segmentation)
 
 ## Information for developers
 
 
--  [vtkSegmentationCore on GitHub](https://github.com/Slicer/Slicer/tree/master/Libs/vtkSegmentationCore) (within Slicer)
--  [Segmentations Slicer module on GitHub](https://github.com/Slicer/Slicer/tree/master/Modules/Loadable/Segmentations)
--  [Segmentations Labs page](https://www.slicer.org/wiki/Documentation/Labs/Segmentations)
--  [Manipulation of segmentations from Python scripts - examples in script repository](https://www.slicer.org/wiki/Documentation/Nightly/ScriptRepository)
+- [vtkSegmentationCore on GitHub](https://github.com/Slicer/Slicer/tree/master/Libs/vtkSegmentationCore) (within Slicer)
+- [Segmentations Slicer module on GitHub](https://github.com/Slicer/Slicer/tree/master/Modules/Loadable/Segmentations)
+- [Segmentations Labs page](https://www.slicer.org/wiki/Documentation/Labs/Segmentations)
+- [Manipulation of segmentations from Python scripts - examples in script repository](https://www.slicer.org/wiki/Documentation/Nightly/ScriptRepository)
 
 ## Related modules
 

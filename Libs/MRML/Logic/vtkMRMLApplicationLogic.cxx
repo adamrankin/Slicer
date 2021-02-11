@@ -56,6 +56,7 @@
 
 // STD includes
 #include <cassert>
+#include <map>
 #include <sstream>
 
 // For LoadDefaultParameterSets
@@ -86,7 +87,7 @@ public:
   vtkSmartPointer<vtkMRMLViewLinkLogic> ViewLinkLogic;
   vtkSmartPointer<vtkMRMLColorLogic> ColorLogic;
   std::string TemporaryPath;
-
+  std::map<std::string, vtkWeakPointer<vtkMRMLAbstractLogic> > ModuleLogicMap;
 };
 
 //----------------------------------------------------------------------------
@@ -525,6 +526,10 @@ void vtkMRMLApplicationLogic::FitSliceToAll(bool onlyIfPropagateVolumeSelectionA
         }
       }
     vtkMRMLSliceNode* sliceNode = sliceLogic->GetSliceNode();
+    // Set to default orientation before rotation so that the view is snapped
+    // closest to the default orientation of this slice view.
+    sliceNode->SetOrientationToDefault();
+    sliceLogic->RotateSliceToLowestVolumeAxes();
     int* dims = sliceNode->GetDimensions();
     sliceLogic->FitSliceToAll(dims[0], dims[1]);
     sliceLogic->SnapSliceOffsetToIJK();
@@ -822,4 +827,40 @@ void vtkMRMLApplicationLogic::EditNode(vtkMRMLNode* node)
 {
   // Observers in qSlicerCoreApplication listen for this event
   this->InvokeEvent(EditNodeEvent, node);
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLApplicationLogic::SetModuleLogic(const char* moduleName,
+                                             vtkMRMLAbstractLogic* moduleLogic)
+{
+  if (!moduleName)
+    {
+    vtkErrorMacro("AddModuleLogic: invalid module name.");
+    return;
+    }
+  if (moduleLogic)
+    {
+    this->Internal->ModuleLogicMap[moduleName] = moduleLogic;
+    }
+  else
+    {
+    // If no logic is provided, erase the module-logic association.
+    this->Internal->ModuleLogicMap.erase(moduleName);
+    }
+}
+
+//----------------------------------------------------------------------------
+vtkMRMLAbstractLogic* vtkMRMLApplicationLogic::GetModuleLogic(const char* moduleName) const
+{
+  if (!moduleName)
+    {
+    vtkErrorMacro("GetModuleLogic: invalid module name");
+    return nullptr;
+    }
+  //Check that the logic is registered.
+  if (this->Internal->ModuleLogicMap.count(moduleName) == 0)
+    {
+    return nullptr;
+    }
+  return this->Internal->ModuleLogicMap[moduleName];
 }

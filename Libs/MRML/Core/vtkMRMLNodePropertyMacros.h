@@ -11,6 +11,7 @@
 #define __vtkMRMLNodePropertyMacros_h
 
 #include <sstream> // needed for std::stringstream
+#include <vtksys/SystemTools.hxx> // needed for vtksys::SystemTools functions
 
 /// @file
 
@@ -121,11 +122,14 @@
     vectorType<std::string> vector = Get##propertyName(); \
     for (vectorType<std::string>::iterator it=vector.begin(); it!=vector.end(); it++) \
       { \
+      if (it!=vector.begin()) \
+        { \
+        xmlWriteOutputStream << ";"; \
+        } \
       std::string attributeValue = *it; \
       vtksys::SystemTools::ReplaceString(attributeValue, "%", "%25"); \
       vtksys::SystemTools::ReplaceString(attributeValue, ";", "%3B"); \
       xmlWriteOutputStream << vtkMRMLNode::XMLAttributeEncodeString(attributeValue); \
-      xmlWriteOutputStream << ";"; \
       } \
     xmlWriteOutputStream << "\""; \
   }
@@ -319,30 +323,42 @@
       separatorPosition = valueString.find(" "); \
       } \
     this->Set##propertyName(vector); \
-  }
+    }
 
 /// Macro for reading an iterable container (of std::string) node property from XML.
+#if VTK_MAJOR_VERSION >= 9 || (VTK_MAJOR_VERSION >= 8 && VTK_MINOR_VERSION >= 90)
+// Use std::string
 #define vtkMRMLReadXMLStdStringVectorMacro(xmlAttributeName, propertyName, vectorType) \
   if (!strcmp(xmlReadAttName, #xmlAttributeName)) \
     { \
-    vectorType<std::string> vector; \
+    vectorType<std::string> attributeValues; \
     std::string valueString(xmlReadAttValue); \
-    size_t separatorPosition = valueString.find(";"); \
-    while(separatorPosition != std::string::npos) \
+    std::vector<std::string> splitXmlReadAttValue = vtksys::SystemTools::SplitString(valueString, ';'); \
+    for (std::string attributeValue : splitXmlReadAttValue) \
       { \
-      std::string attributeValue = valueString.substr(0,separatorPosition); \
       vtksys::SystemTools::ReplaceString(attributeValue, "%3B", ";"); \
       vtksys::SystemTools::ReplaceString(attributeValue, "%25", "%"); \
-      vector.insert(vector.end(), attributeValue); \
-      valueString = valueString.substr(separatorPosition+1); \
-      separatorPosition = valueString.find(";"); \
+      attributeValues.emplace_back(attributeValue); \
       } \
-    if (!valueString.empty()) \
-      { \
-      vector.push_back(valueString); \
-      } \
-    this->Set##propertyName(vector); \
+    this->Set##propertyName(attributeValues); \
     }
+#else
+// Use vtksys::String
+#define vtkMRMLReadXMLStdStringVectorMacro(xmlAttributeName, propertyName, vectorType) \
+  if (!strcmp(xmlReadAttName, #xmlAttributeName)) \
+    { \
+    vectorType<std::string> attributeValues; \
+    std::string valueString(xmlReadAttValue); \
+    std::vector<vtksys::String> splitXmlReadAttValue = vtksys::SystemTools::SplitString(valueString, ';'); \
+    for (std::string attributeValue : splitXmlReadAttValue) \
+      { \
+      vtksys::SystemTools::ReplaceString(attributeValue, "%3B", ";"); \
+      vtksys::SystemTools::ReplaceString(attributeValue, "%25", "%"); \
+      attributeValues.emplace_back(attributeValue); \
+      } \
+    this->Set##propertyName(attributeValues); \
+    }
+#endif
 
 /// Macro for reading a vtkMatrix4x4* node property from XML.
 /// "Owned" means that the node owns the matrix, the object is always valid and cannot be replaced from outside
@@ -441,7 +457,7 @@
   this->Set##propertyName(this->SafeDownCast(copySourceNode)->Get##propertyName());
 
 /// Macro for copying an iterable container (of std::string) vector node property value.
-#define vtkMRMLCopyStdStringVectorMacroMacro(propertyName) \
+#define vtkMRMLCopyStdStringVectorMacro(propertyName) \
   this->Set##propertyName(this->SafeDownCast(copySourceNode)->Get##propertyName());
 
 /// Macro for copying a vtkMatrix4x4* property value.

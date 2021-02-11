@@ -59,8 +59,8 @@ vtkSlicerMarkupsWidgetRepresentation2D::ControlPointsPipeline2D::ControlPointsPi
 
   this->Property = vtkSmartPointer<vtkProperty2D>::New();
   this->Property->SetColor(0.4, 1.0, 1.0);
-  this->Property->SetPointSize(10.);
-  this->Property->SetLineWidth(2.);
+  this->Property->SetPointSize(3.);
+  this->Property->SetLineWidth(3.);
   this->Property->SetOpacity(1.);
 
   this->Mapper = vtkSmartPointer<vtkPolyDataMapper2D>::New();
@@ -433,9 +433,12 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateFromMRML(vtkMRMLNode* caller,
     controlPoints->Property->SetColor(color);
     controlPoints->Property->SetOpacity(opacity);
 
+    controlPoints->TextProperty->ShallowCopy(this->MarkupsDisplayNode->GetTextProperty());
     controlPoints->TextProperty->SetColor(color);
     controlPoints->TextProperty->SetOpacity(opacity);
-    controlPoints->TextProperty->SetFontSize(static_cast<int>(5. * this->MarkupsDisplayNode->GetTextScale()));
+    controlPoints->TextProperty->SetFontSize(static_cast<int>(this->MarkupsDisplayNode->GetTextProperty()->GetFontSize()
+      * this->MarkupsDisplayNode->GetTextScale()));
+    controlPoints->TextProperty->SetBackgroundOpacity(opacity * this->MarkupsDisplayNode->GetTextProperty()->GetBackgroundOpacity());
 
     vtkMarkupsGlyphSource2D* glyphSource = this->GetControlPointsPipeline(controlPointType)->GlyphSource2D;
     if (this->MarkupsDisplayNode->GlyphTypeIs3D())
@@ -445,7 +448,7 @@ void vtkSlicerMarkupsWidgetRepresentation2D::UpdateFromMRML(vtkMRMLNode* caller,
       }
     else
       {
-      glyphSource->SetGlyphType(this->MarkupsDisplayNode->GetGlyphType());
+      glyphSource->SetGlyphType(this->GetGlyphTypeSourceFromDisplay(this->MarkupsDisplayNode->GetGlyphType()));
       }
 
     if (this->MarkupsDisplayNode->GetSliceProjectionOutlinedBehindSlicePlane() && controlPointType == ProjectBack)
@@ -503,8 +506,7 @@ void vtkSlicerMarkupsWidgetRepresentation2D::CanInteract(
   foundComponentType = vtkMRMLMarkupsDisplayNode::ComponentNone;
   vtkMRMLSliceNode *sliceNode = this->GetSliceNode();
   vtkMRMLMarkupsNode* markupsNode = this->GetMarkupsNode();
-  if (!sliceNode || !markupsNode || markupsNode->GetLocked() || markupsNode->GetNumberOfControlPoints() < 1
-    || !this->GetVisibility() || !interactionEventData)
+  if (!sliceNode || !markupsNode || markupsNode->GetLocked() || !this->GetVisibility() || !interactionEventData)
     {
     return;
     }
@@ -526,7 +528,7 @@ void vtkSlicerMarkupsWidgetRepresentation2D::CanInteract(
     return;
     }
 
-  if (markupsNode->GetNumberOfControlPoints() > 2 && this->ClosedLoop && this->CenterVisibilityOnSlice)
+  if (markupsNode->GetNumberOfControlPoints() > 2 && this->CurveClosed && this->CenterVisibilityOnSlice)
     {
     // Check if center is selected
     double centerPosWorld[3], centerPosDisplay[3];
@@ -1296,16 +1298,16 @@ void vtkSlicerMarkupsWidgetRepresentation2D::MarkupsInteractionPipeline2D::GetVi
     return;
     }
 
-  double tempNormal[4] = { 0, 0, 1, 0 };
+  double viewPlaneNormal4[4] = { 0, 0, 1, 0 };
   if (this->Representation)
     {
     vtkMRMLSliceNode* sliceNode = vtkMRMLSliceNode::SafeDownCast(this->Representation->GetViewNode());
     if (sliceNode)
       {
-      sliceNode->GetSliceToRAS()->MultiplyPoint(tempNormal, tempNormal);
+      sliceNode->GetSliceToRAS()->MultiplyPoint(viewPlaneNormal4, viewPlaneNormal4);
       }
     }
-  viewPlaneNormal[0] = tempNormal[0];
-  viewPlaneNormal[1] = tempNormal[1];
-  viewPlaneNormal[2] = tempNormal[2];
+  viewPlaneNormal[0] = viewPlaneNormal4[0];
+  viewPlaneNormal[1] = viewPlaneNormal4[1];
+  viewPlaneNormal[2] = viewPlaneNormal4[2];
 }

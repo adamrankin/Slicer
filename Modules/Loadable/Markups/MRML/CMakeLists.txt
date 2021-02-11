@@ -11,21 +11,32 @@ set(${KIT}_INCLUDE_DIRECTORIES
   )
 
 set(${KIT}_SRCS
+  vtkMRML${MODULE_NAME}AngleNode.cxx
+  vtkMRML${MODULE_NAME}ClosedCurveNode.cxx
+  vtkMRML${MODULE_NAME}CurveNode.cxx
   vtkMRML${MODULE_NAME}DisplayNode.cxx
   vtkMRML${MODULE_NAME}FiducialDisplayNode.cxx
-  vtkMRML${MODULE_NAME}FiducialNode.cxx
-  vtkMRML${MODULE_NAME}LineNode.cxx
-  vtkMRML${MODULE_NAME}AngleNode.cxx
-  vtkMRML${MODULE_NAME}CurveNode.cxx
-  vtkMRML${MODULE_NAME}ClosedCurveNode.cxx
-  vtkMRML${MODULE_NAME}PlaneNode.cxx
-  vtkMRML${MODULE_NAME}Node.cxx
   vtkMRML${MODULE_NAME}FiducialStorageNode.cxx
+  vtkMRML${MODULE_NAME}FiducialNode.cxx
   vtkMRML${MODULE_NAME}JsonStorageNode.cxx
+  vtkMRML${MODULE_NAME}LineNode.cxx
+  vtkMRML${MODULE_NAME}Node.cxx
+  vtkMRML${MODULE_NAME}PlaneNode.cxx
+  vtkMRML${MODULE_NAME}ROINode.cxx
+  vtkMRML${MODULE_NAME}ROIJsonStorageNode.cxx
+  vtkMRML${MODULE_NAME}ROIJsonStorageNode.h
   vtkCurveGenerator.cxx
   vtkCurveGenerator.h
+  vtkCurveMeasurementsCalculator.cxx
+  vtkCurveMeasurementsCalculator.h
   vtkLinearSpline.cxx
   vtkLinearSpline.h
+  vtkMRMLMeasurementAngle.cxx
+  vtkMRMLMeasurementAngle.h
+  vtkMRMLMeasurementArea.cxx
+  vtkMRMLMeasurementArea.h
+  vtkMRMLMeasurementLength.cxx
+  vtkMRMLMeasurementLength.h
   vtkParametricPolynomialApproximation.cxx
   vtkParametricPolynomialApproximation.h
   vtkSlicerDijkstraGraphGeodesicPath.cxx

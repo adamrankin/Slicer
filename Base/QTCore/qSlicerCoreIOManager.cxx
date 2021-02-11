@@ -33,6 +33,7 @@
 
 // MRML includes
 #include <vtkMRMLApplicationLogic.h>
+#include <vtkMRMLMessageCollection.h>
 #include <vtkMRMLNode.h>
 #include <vtkMRMLScene.h>
 #include <vtkMRMLStorableNode.h>
@@ -141,7 +142,7 @@ QList<qSlicerFileWriter*> qSlicerCoreIOManagerPrivate::writers(
       {
       foreach(const QString& extension, ctk::nameFilterToExtensions(nameFilter))
         {
-        // HACK - See http://www.na-mic.org/Bug/view.php?id=3322
+        // HACK - See https://github.com/Slicer/Slicer/issues/3322
         QString extensionWithStar(extension);
         if (!extensionWithStar.startsWith("*"))
           {
@@ -210,18 +211,25 @@ qSlicerIO::IOFileType qSlicerCoreIOManager
 
 //-----------------------------------------------------------------------------
 qSlicerIO::IOFileType qSlicerCoreIOManager
-::fileWriterFileType(vtkObject* object)const
+::fileWriterFileType(vtkObject* object, const QString& format/*=QString()*/)const
 {
   Q_D(const qSlicerCoreIOManager);
   QList<qSlicerIO::IOFileType> matchingFileTypes;
+  // closest match is the writer that supports the node type but not
+  // that specific extension
+  QString closestMatch = QString("NoFile");
   foreach (const qSlicerFileWriter* writer, d->Writers)
     {
     if (writer->canWriteObject(object))
       {
-      return writer->fileType();
+      closestMatch = writer->fileType();
+      if (format.isEmpty() || writer->extensions(object).contains(format))
+        {
+        return writer->fileType();
+        }
       }
     }
-  return QString("NoFile");
+  return closestMatch;
 }
 
 //-----------------------------------------------------------------------------
@@ -419,26 +427,27 @@ QString qSlicerCoreIOManager::completeSlicerWritableFileNameSuffix(vtkMRMLStorab
 }
 
 //-----------------------------------------------------------------------------
-bool qSlicerCoreIOManager::loadScene(const QString& fileName, bool clear)
+bool qSlicerCoreIOManager::loadScene(const QString& fileName, bool clear, vtkMRMLMessageCollection* userMessages/*=nullptr*/)
 {
   qSlicerIO::IOProperties properties;
   properties["fileName"] = fileName;
   properties["clear"] = clear;
-  return this->loadNodes(QString("SceneFile"), properties);
+  return this->loadNodes(QString("SceneFile"), properties, nullptr, userMessages);
 }
 
 //-----------------------------------------------------------------------------
-bool qSlicerCoreIOManager::loadFile(const QString& fileName)
+bool qSlicerCoreIOManager::loadFile(const QString& fileName, vtkMRMLMessageCollection* userMessages/*=nullptr*/)
 {
   qSlicerIO::IOProperties properties;
   properties["fileName"] = fileName;
-  return this->loadNodes(this->fileType(fileName), properties);
+  return this->loadNodes(this->fileType(fileName), properties, nullptr, userMessages);
 }
 
 //-----------------------------------------------------------------------------
 bool qSlicerCoreIOManager::loadNodes(const qSlicerIO::IOFileType& fileType,
                                      const qSlicerIO::IOProperties& parameters,
-                                     vtkCollection* loadedNodes)
+                                     vtkCollection* loadedNodes,
+                                     vtkMRMLMessageCollection* userMessages/*=nullptr*/)
 {
   Q_D(qSlicerCoreIOManager);
 
@@ -458,7 +467,7 @@ bool qSlicerCoreIOManager::loadNodes(const qSlicerIO::IOFileType& fileType,
         fileParameters["name"] = nameId < names.size() ? names[nameId] : names.last();
         ++nameId;
         }
-      res &= this->loadNodes(fileType, fileParameters, loadedNodes);
+      res &= this->loadNodes(fileType, fileParameters, loadedNodes, userMessages);
       }
     return res;
     }
@@ -471,18 +480,26 @@ bool qSlicerCoreIOManager::loadNodes(const qSlicerIO::IOFileType& fileType,
 
   // If no readers were able to read and load the file(s), success will remain false
   bool success = false;
+  int numberOfUserMessagesBefore = userMessages ? userMessages->GetNumberOfMessages() : 0;
+  QString userMessagePrefix = QString("Loading %1 - ").arg(parameters["fileName"].toString());
 
   QStringList nodes;
   foreach (qSlicerFileReader* reader, readers)
     {
     QTime timeProbe;
     timeProbe.start();
+    reader->userMessages()->ClearMessages();
     reader->setMRMLScene(d->currentScene());
     if (!reader->canLoadFile(parameters["fileName"].toString()))
       {
       continue;
       }
-    if (!reader->load(parameters))
+    bool currentFileSuccess = reader->load(parameters);
+    if (userMessages)
+      {
+      userMessages->AddMessages(reader->userMessages(), userMessagePrefix.toStdString());
+      }
+    if (!currentFileSuccess)
       {
       continue;
       }
@@ -494,6 +511,12 @@ bool qSlicerCoreIOManager::loadNodes(const qSlicerIO::IOFileType& fileType,
     nodes << reader->loadedNodes();
     success = true;
     break;
+    }
+
+  if (!success && userMessages != nullptr && userMessages->GetNumberOfMessages() == numberOfUserMessagesBefore)
+    {
+    // Make sure that at least one message is logged if reading failed.
+    userMessages->AddMessage(vtkCommand::ErrorEvent, (QString(tr("%1 load failed.")).arg(userMessagePrefix)).toStdString());
     }
 
   loadedFileParameters.insert("nodeIDs", nodes);
@@ -518,30 +541,32 @@ bool qSlicerCoreIOManager::loadNodes(const qSlicerIO::IOFileType& fileType,
 }
 
 //-----------------------------------------------------------------------------
-bool qSlicerCoreIOManager::
-loadNodes(const QList<qSlicerIO::IOProperties>& files,
-          vtkCollection* loadedNodes)
+bool qSlicerCoreIOManager::loadNodes(const QList<qSlicerIO::IOProperties>& files,
+          vtkCollection* loadedNodes, vtkMRMLMessageCollection* userMessages/*=nullptr*/)
 {
-  bool res = true;
+  bool success = true;
   foreach(qSlicerIO::IOProperties fileProperties, files)
     {
-    res = this->loadNodes(
+    int numberOfUserMessagesBefore = userMessages ? userMessages->GetNumberOfMessages() : 0;
+    success = this->loadNodes(
       static_cast<qSlicerIO::IOFileType>(fileProperties["fileType"].toString()),
-      fileProperties,
-      loadedNodes)
-
-      && res;
+      fileProperties, loadedNodes, userMessages)
+      && success;
+    // Add a separator between nodes
+    if (userMessages && userMessages->GetNumberOfMessages() > numberOfUserMessagesBefore)
+      {
+      userMessages->AddSeparator();
+      }
     }
-  return res;
+  return success;
 }
 
 //-----------------------------------------------------------------------------
-vtkMRMLNode* qSlicerCoreIOManager::loadNodesAndGetFirst(
-  qSlicerIO::IOFileType fileType,
-  const qSlicerIO::IOProperties& parameters)
+vtkMRMLNode* qSlicerCoreIOManager::loadNodesAndGetFirst(qSlicerIO::IOFileType fileType,
+  const qSlicerIO::IOProperties& parameters, vtkMRMLMessageCollection* userMessages/*=nullptr*/)
 {
   vtkNew<vtkCollection> loadedNodes;
-  this->loadNodes(fileType, parameters, loadedNodes.GetPointer());
+  this->loadNodes(fileType, parameters, loadedNodes.GetPointer(), userMessages);
 
   vtkMRMLNode* node = vtkMRMLNode::SafeDownCast(loadedNodes->GetItemAsObject(0));
   Q_ASSERT(node);
@@ -623,13 +648,13 @@ void qSlicerCoreIOManager::addDefaultStorageNodes()
 
 //-----------------------------------------------------------------------------
 bool qSlicerCoreIOManager::saveNodes(qSlicerIO::IOFileType fileType,
-                                     const qSlicerIO::IOProperties& parameters)
+  const qSlicerIO::IOProperties& parameters, vtkMRMLMessageCollection* userMessages/*=nullptr*/)
 {
   Q_D(qSlicerCoreIOManager);
 
   Q_ASSERT(parameters.contains("fileName"));
 
-  // HACK - See http://www.na-mic.org/Bug/view.php?id=3322
+  // HACK - See https://github.com/Slicer/Slicer/issues/3322
   //        Sort writers to ensure generic ones are last.
   const QList<qSlicerFileWriter*> writers = d->writers(fileType, parameters);
   if (writers.isEmpty())
@@ -644,7 +669,13 @@ bool qSlicerCoreIOManager::saveNodes(qSlicerIO::IOFileType fileType,
   foreach (qSlicerFileWriter* writer, writers)
     {
     writer->setMRMLScene(d->currentScene());
-    if (!writer->write(parameters))
+    writer->userMessages()->ClearMessages();
+    bool currentWriterSuccess = writer->write(parameters);
+    if (userMessages)
+      {
+      userMessages->AddMessages(writer->userMessages());
+      }
+    if (!currentWriterSuccess)
       {
       continue;
       }
@@ -671,13 +702,14 @@ bool qSlicerCoreIOManager::saveNodes(qSlicerIO::IOFileType fileType,
 }
 
 //-----------------------------------------------------------------------------
-bool qSlicerCoreIOManager::saveScene(const QString& fileName, QImage screenShot)
+bool qSlicerCoreIOManager::saveScene(const QString& fileName, QImage screenShot,
+  vtkMRMLMessageCollection* userMessages/*=nullptr*/)
 {
   qSlicerIO::IOProperties properties;
   properties["fileName"] = fileName;
   properties["screenShot"] = screenShot;
 
-  return this->saveNodes(QString("SceneFile"), properties);
+  return this->saveNodes(QString("SceneFile"), properties, userMessages);
 }
 
 //-----------------------------------------------------------------------------

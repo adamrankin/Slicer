@@ -24,6 +24,7 @@
 #include <vtkMRMLModelNode.h>
 #include <vtkMRMLScene.h>
 #include <vtkMRMLSelectionNode.h>
+#include <vtkMRMLSliceLogic.h>
 #include <vtkMRMLSliceNode.h>
 #include <vtkMRMLSubjectHierarchyConstants.h>
 #include <vtkMRMLSubjectHierarchyNode.h>
@@ -621,12 +622,12 @@ void vtkMRMLModelDisplayableManager::ProcessMRMLNodesEvents(vtkObject *caller,
           break;
           } // else fall through
       case vtkCommand::ModifiedEvent:
-        VTK_FALLTHROUGH;
       case vtkMRMLModelNode::MeshModifiedEvent:
+      case vtkMRMLTransformableNode::TransformModifiedEvent:
         requestRender = this->OnMRMLDisplayableModelNodeModifiedEvent(displayableNode);
         break;
       default:
-        this->SetUpdateFromMRMLRequested(true);
+        // We don't expect any other types of events.
         break;
       }
     if (!isUpdating && requestRender)
@@ -856,9 +857,7 @@ bool vtkMRMLModelDisplayableManager::OnMRMLDisplayableModelNodeModifiedEvent(
     }
   if (updateModel)
     {
-    this->UpdateClipSlicesFromMRML();
     this->UpdateModifiedModel(modelNode);
-    this->SetUpdateFromMRMLRequested(true);
     }
   if (updateMRML)
     {
@@ -891,7 +890,7 @@ void vtkMRMLModelDisplayableManager::UpdateFromMRML()
 void vtkMRMLModelDisplayableManager::UpdateModelsFromMRML()
 {
   // UpdateModelsFromMRML may recursively trigger calling of UpdateModelsFromMRML
-  // via node reference updates. IsUdatingModelsFromMRML flag prevents restarting
+  // via node reference updates. IsUpdatingModelsFromMRML flag prevents restarting
   // UpdateModelsFromMRML if it is already in progress.
   if (this->Internal->IsUpdatingModelsFromMRML)
     {
@@ -901,8 +900,7 @@ void vtkMRMLModelDisplayableManager::UpdateModelsFromMRML()
   vtkMRMLScene *scene = this->GetMRMLScene();
   vtkMRMLNode *node = nullptr;
   std::vector<vtkMRMLDisplayableNode *> slices;
-  static const int NUMBER_OF_SLICE_MODEL_NODES = 3;
-  static const char* SLICE_MODEL_NODE_NAMES[NUMBER_OF_SLICE_MODEL_NODES] = { "Red Volume Slice", "Green Volume Slice", "Yellow Volume Slice" };
+  std::vector<vtkMRMLDisplayableNode *> nonSlices;
 
   // find volume slices
   bool clearDisplayedModels = scene ? false : true;
@@ -914,16 +912,7 @@ void vtkMRMLModelDisplayableManager::UpdateModelsFromMRML()
     node = dnodes[n];
     vtkMRMLDisplayableNode *model = vtkMRMLDisplayableNode::SafeDownCast(node);
     // render slices last so that transparent objects are rendered in front of them
-    bool isSliceNode = false;
-    for (int sliceIndex = 0; sliceIndex < NUMBER_OF_SLICE_MODEL_NODES; sliceIndex++)
-      {
-      if (!strcmp(model->GetName(), SLICE_MODEL_NODE_NAMES[sliceIndex]))
-        {
-        isSliceNode = true;
-        break;
-        }
-      }
-    if (isSliceNode)
+    if (vtkMRMLSliceLogic::IsSliceModelNode(model))
       {
       slices.push_back(model);
 
@@ -933,25 +922,24 @@ void vtkMRMLModelDisplayableManager::UpdateModelsFromMRML()
         vtkMRMLDisplayNode *dnode = model->GetNthDisplayNode(i);
         if (dnode && this->Internal->DisplayedActors.find(dnode->GetID()) == this->Internal->DisplayedActors.end())
           {
+          // it is a new slice display node, therefore we need to remove all existing model node actors
+          // and insert this slice actor before them
           clearDisplayedModels = true;
           break;
           }
         }
       }
-    if (clearDisplayedModels && slices.size() == NUMBER_OF_SLICE_MODEL_NODES)
+    else
       {
-      // We have found all the slice nodes and we'll remove all existing display nodes anyway,
-      // so there is no point in continuing.
-      break;
+      nonSlices.push_back(model);
       }
     }
 
   if (clearDisplayedModels)
     {
-    std::map<std::string, vtkProp3D *>::iterator iter;
-    for (iter = this->Internal->DisplayedActors.begin(); iter != this->Internal->DisplayedActors.end(); iter++)
+    for (std::pair< const std::string, vtkProp3D* > iter : this->Internal->DisplayedActors)
       {
-      this->GetRenderer()->RemoveViewProp(iter->second);
+      this->GetRenderer()->RemoveViewProp(iter.second);
       }
     this->RemoveModelObservers(1);
     this->Internal->DisplayedActors.clear();
@@ -961,9 +949,8 @@ void vtkMRMLModelDisplayableManager::UpdateModelsFromMRML()
     }
 
   // render slices first
-  for (unsigned int i=0; i<slices.size(); i++)
+  for (vtkMRMLDisplayableNode * model : slices)
     {
-    vtkMRMLDisplayableNode *model = slices[i];
     // add nodes that are not in the list yet
     int ndnodes = model->GetNumberOfDisplayNodes();
     for (int i = 0; i<ndnodes; i++)
@@ -979,27 +966,9 @@ void vtkMRMLModelDisplayableManager::UpdateModelsFromMRML()
     }
 
   // render the rest of the models
-  for (int n=0; n<nnodes; n++)
+  for (vtkMRMLDisplayableNode* model : nonSlices)
     {
-    vtkMRMLDisplayableNode *model = vtkMRMLDisplayableNode::SafeDownCast(dnodes[n]);
-    // render slices last so that transparent objects are rendered in front of them
-    if (model)
-      {
-      bool isSliceNode = false;
-      for (int sliceIndex = 0; sliceIndex < NUMBER_OF_SLICE_MODEL_NODES; sliceIndex++)
-        {
-        if (!strcmp(model->GetName(), SLICE_MODEL_NODE_NAMES[sliceIndex]))
-          {
-          isSliceNode = true;
-          break;
-          }
-        }
-      if (isSliceNode)
-        {
-        continue;
-        }
-      this->UpdateModifiedModel(model);
-      }
+    this->UpdateModifiedModel(model);
     }
   this->Internal->IsUpdatingModelsFromMRML = false;
 }
@@ -1583,7 +1552,7 @@ void vtkMRMLModelDisplayableManager::SetModelDisplayProperty(vtkMRMLDisplayableN
         // Force actors to be treated as opaque. Otherwise, transparent
         // elements in the texture cause the actor to be treated as
         // translucent, i.e. rendered without writing to the depth buffer.
-        // See http://www.na-mic.org/Bug/view.php?id=4253.
+        // See https://github.com/Slicer/Slicer/issues/4253.
         actor->SetForceOpaque(actorProperties->GetOpacity() >= 1.0);
         }
       else
@@ -1591,6 +1560,37 @@ void vtkMRMLModelDisplayableManager::SetModelDisplayProperty(vtkMRMLDisplayableN
         actor->SetTexture(nullptr);
         actor->ForceOpaqueOff();
         }
+
+      // Set backface properties
+      vtkProperty* actorBackfaceProperties = actor->GetBackfaceProperty();
+      if (!actorBackfaceProperties)
+        {
+        vtkNew<vtkProperty> newActorBackfaceProperties;
+        actor->SetBackfaceProperty(newActorBackfaceProperties);
+        actorBackfaceProperties = newActorBackfaceProperties;
+        }
+      actorBackfaceProperties->DeepCopy(actorProperties);
+
+      double offsetHsv[3];
+      modelDisplayNode->GetBackfaceColorHSVOffset(offsetHsv);
+
+      double colorHsv[3];
+      vtkMath::RGBToHSV(actorProperties->GetColor(), colorHsv);
+      double colorRgb[3];
+      colorHsv[0] += offsetHsv[0];
+      // wrap around hue value
+      if (colorHsv[0] < 0.0)
+        {
+        colorHsv[0] += 1.0;
+        }
+      else if (colorHsv[0] > 1.0)
+        {
+        colorHsv[0] -= 1.0;
+        }
+      colorHsv[1] = vtkMath::ClampValue<double>(colorHsv[1] + offsetHsv[1], 0, 1);
+      colorHsv[2] = vtkMath::ClampValue<double>(colorHsv[2] + offsetHsv[2], 0, 1);
+      vtkMath::HSVToRGB(colorHsv, colorRgb);
+      actorBackfaceProperties->SetColor(colorRgb);
       }
     else if (imageActor)
       {
@@ -1628,14 +1628,12 @@ const char* vtkMRMLModelDisplayableManager::GetActiveScalarName(
         meshConnection->GetProducer()->Update();
         }
       }
-    activeScalarName =
-      modelNode->GetActiveCellScalarName(vtkDataSetAttributes::SCALARS);
+    activeScalarName = modelNode->GetActiveCellScalarName(vtkDataSetAttributes::SCALARS);
     if (activeScalarName)
       {
       return activeScalarName;
       }
-    activeScalarName =
-      modelNode->GetActivePointScalarName(vtkDataSetAttributes::SCALARS);
+    activeScalarName = modelNode->GetActivePointScalarName(vtkDataSetAttributes::SCALARS);
     if (activeScalarName)
       {
       return activeScalarName;

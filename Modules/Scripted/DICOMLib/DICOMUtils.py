@@ -647,6 +647,7 @@ def refreshDICOMWidget():
 def getLoadablesFromFileLists(fileLists, pluginClassNames=None, messages=None, progressCallback=None, pluginInstances=None):
   """Take list of file lists, return loadables by plugin dictionary
   """
+  detailedLogging = slicer.util.settingsValue('DICOM/detailedLogging', False, converter=slicer.util.toBool)
   loadablesByPlugin = {}
   loadEnabled = False
   if not isinstance(fileLists, list) or len(fileLists) == 0 or not type(fileLists[0]) in [tuple, list]:
@@ -668,6 +669,8 @@ def getLoadablesFromFileLists(fileLists, pluginClassNames=None, messages=None, p
       if cancelled:
         break
     try:
+      if detailedLogging:
+        logging.debug("Examine for import using " + pluginClassName)
       loadablesByPlugin[plugin] = plugin.examineForImport(fileLists)
       # If regular method is not overridden (so returns empty list), try old function
       # Ensuring backwards compatibility: examineForImport used to be called examine
@@ -729,9 +732,10 @@ def loadLoadables(loadablesByPlugin, messages=None, progressCallback=None):
       # during loading. These must be added to the database.
       for derivedItem in loadable.derivedItems:
         indexer = ctk.ctkDICOMIndexer()
-        cancelled = progressCallback("{0} ({1})".format(loadable.name, derivedItem), step*100/len(selectedLoadables))
-        if cancelled:
-          break
+        if progressCallback:
+          cancelled = progressCallback("{0} ({1})".format(loadable.name, derivedItem), step*100/len(selectedLoadables))
+          if cancelled:
+            break
         indexer.addFile(slicer.dicomDatabase, derivedItem)
     except AttributeError:
       # no derived items or some other attribute error

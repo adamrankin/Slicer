@@ -102,9 +102,6 @@ public:
   /// Get slice view name
   QString sliceViewName()const;
 
-  /// Return the color associated to the slice view
-  Q_INVOKABLE static QColor sliceViewColor(const QString& sliceViewName);
-
   /// Convenience function to set the abbreviated name for the slice view.
   /// This is equivalent to call vtkMRMLSliceNode::SetLayoutLabel()
   /// If no SliceNode is set, this is a no-op.
@@ -206,8 +203,8 @@ public slots:
   /// there is a segmentation node in the scene
   void updateSegmentationControlsVisibility();
 
-  /// Rotate to volume plane
-  void rotateSliceToBackground();
+  /// Rotate to volume plane (first of background, foreground, or label)
+  void rotateSliceToLowestVolumeAxes();
 
   void setSegmentationHidden(bool hide);
   void setLabelMapHidden(bool hide);

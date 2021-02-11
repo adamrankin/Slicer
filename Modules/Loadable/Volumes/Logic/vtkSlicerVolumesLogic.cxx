@@ -421,23 +421,6 @@ void vtkSlicerVolumesLogic::ProcessMRMLNodesEvents(vtkObject *vtkNotUsed(caller)
 }
 
 //----------------------------------------------------------------------------
-void vtkSlicerVolumesLogic::SetColorLogic(vtkMRMLColorLogic *colorLogic)
-{
-  if (this->ColorLogic == colorLogic)
-    {
-    return;
-    }
-  this->ColorLogic = colorLogic;
-  this->Modified();
-}
-
-//----------------------------------------------------------------------------
-vtkMRMLColorLogic* vtkSlicerVolumesLogic::GetColorLogic()const
-{
-  return this->ColorLogic;
-}
-
-//----------------------------------------------------------------------------
 void vtkSlicerVolumesLogic::SetActiveVolumeNode(vtkMRMLVolumeNode *activeNode)
 {
   vtkSetMRMLNodeMacro(this->ActiveVolumeNode, activeNode);
@@ -452,24 +435,25 @@ vtkMRMLVolumeNode* vtkSlicerVolumesLogic::GetActiveVolumeNode()const
 //----------------------------------------------------------------------------
 void vtkSlicerVolumesLogic
 ::SetAndObserveColorToDisplayNode(vtkMRMLDisplayNode * displayNode,
-                                  int labelMap, const char* filename)
+                                  int labelMap, const char* vtkNotUsed(filename))
 {
-  vtkMRMLColorLogic * colorLogic = this->GetColorLogic();
+  if (displayNode->GetColorNodeID())
+    {
+    // only set default color node ID if it was not set already (by default volume node stored in the scene)
+    return;
+    }
+  vtkMRMLColorLogic* colorLogic = vtkMRMLColorLogic::SafeDownCast(this->GetModuleLogic("Colors"));
   if (colorLogic == nullptr)
     {
+    vtkErrorMacro("SetAndObserveColorToDisplayNode failed: invalid Colors module logic.");
     return;
     }
   if (labelMap)
     {
-    if (displayNode->GetColorNodeID() == nullptr)
-      {
-      // only set default color node ID if it was not set already (by default volume node stored in the scene)
-      displayNode->SetAndObserveColorNodeID(colorLogic->GetDefaultLabelMapColorNodeID());
-      }
+    displayNode->SetAndObserveColorNodeID(colorLogic->GetDefaultLabelMapColorNodeID());
     }
-  else if (displayNode->GetColorNodeID() == nullptr)
+  else
     {
-    // only set default color node ID if it was not set already (by default volume node stored in the scene)
     displayNode->SetAndObserveColorNodeID(colorLogic->GetDefaultVolumeColorNodeID());
     }
 }
@@ -1065,7 +1049,7 @@ vtkSlicerVolumesLogic::CompareVolumeGeometry(vtkMRMLScalarVolumeNode *volumeNode
       double volumeValue1, volumeValue2;
       // set the floating point precision to match the precision of the espilon
       // used for the fuzzy compare (need fixed so precision applies to right
-      // of the decimal point see https://www.na-mic.org/Bug/view.php?id=3776).
+      // of the decimal point see https://github.com/Slicer/Slicer/issues/3776).
       warnings << std::fixed;
       warnings << std::setprecision(this->GetCompareVolumeGeometryPrecision());
       // sanity check versus the volume spacings

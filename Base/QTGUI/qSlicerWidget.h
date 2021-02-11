@@ -31,7 +31,9 @@
 #include "qSlicerObject.h"
 #include "qSlicerBaseQTGUIExport.h"
 
+class vtkMRMLAbstractLogic;
 class vtkMRMLScene;
+class vtkSlicerApplicationLogic;
 class QScrollArea;
 class qSlicerWidgetPrivate;
 
@@ -42,6 +44,12 @@ class Q_SLICER_BASE_QTGUI_EXPORT qSlicerWidget : public QWidget, public virtual 
 public:
   qSlicerWidget(QWidget *parent=nullptr, Qt::WindowFlags f=nullptr);
   ~qSlicerWidget() override;
+
+  // Convenience method for getting application logic from the application.
+  vtkSlicerApplicationLogic* appLogic()const;
+
+  // Convenience method for getting a module logic from the application.
+  vtkMRMLAbstractLogic* moduleLogic(const QString& moduleName)const;
 
 public slots:
   void setMRMLScene(vtkMRMLScene* scene) override;

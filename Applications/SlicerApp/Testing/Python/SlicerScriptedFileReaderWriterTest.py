@@ -40,6 +40,10 @@ class SlicerScriptedFileReaderWriterTestFileReader(object):
     return ['My file type (*.mft)']
 
   def canLoadFile(self, filePath):
+    # Only enable this reader in testing mode
+    if not slicer.app.testingEnabled():
+      return False
+
     firstLine = ''
     with open(filePath, 'r') as f:
       firstLine = f.readline()
@@ -95,6 +99,10 @@ class SlicerScriptedFileReaderWriterTestFileWriter(object):
     return ['My file type (*.mft)']
 
   def canWriteObject(self, obj):
+    # Only enable this writer in testing mode
+    if not slicer.app.testingEnabled():
+      return False
+
     return bool(obj.IsA("vtkMRMLTextNode"))
 
   def write(self, properties):
@@ -141,14 +149,16 @@ class SlicerScriptedFileReaderWriterTestTest(ScriptedLoadableModuleTest):
     import shutil
     shutil.rmtree(self.tempDir, True)
 
-  def test_Writer(self):
+  def test_WriterReader(self):
+    # Writer and reader tests are put in the same function to ensure
+    # that writing is done before reading (it generates input data for reading).
+
     self.delayDisplay('Testing node writer')
     slicer.mrmlScene.Clear()
     textNode = slicer.mrmlScene.AddNewNodeByClass('vtkMRMLTextNode')
     textNode.SetText(self.textInNode)
     self.assertTrue(slicer.util.saveNode(textNode, self.validFilename, {'fileType': 'MyFileType'}))
 
-  def test_Reader(self):
     self.delayDisplay('Testing node reader')
     slicer.mrmlScene.Clear()
     loadedNode = slicer.util.loadNodeFromFile(self.validFilename, 'MyFileType')

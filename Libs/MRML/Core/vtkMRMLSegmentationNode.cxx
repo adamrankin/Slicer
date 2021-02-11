@@ -87,6 +87,9 @@ vtkMRMLSegmentationNode::vtkMRMLSegmentationNode()
   this->ContentModifiedEvents->InsertNextValue(vtkSegmentation::SegmentRemoved);
   this->ContentModifiedEvents->InsertNextValue(vtkSegmentation::SegmentModified);
   this->ContentModifiedEvents->InsertNextValue(vtkSegmentation::SegmentsOrderModified);
+
+  this->AddNodeReferenceRole(this->GetLabelmapConversionColorTableNodeReferenceRole(),
+    this->GetLabelmapConversionColorTableNodeReferenceMRMLAttributeName());
 }
 
 //----------------------------------------------------------------------------
@@ -538,15 +541,16 @@ bool vtkMRMLSegmentationNode::GenerateMergedLabelmap(
   vtkOrientedImageData* mergedImageData,
   int extentComputationMode,
   vtkOrientedImageData* mergedLabelmapGeometry/*=nullptr*/,
-  const std::vector<std::string>& segmentIDs/*=std::vector<std::string>()*/
+  const std::vector<std::string>& segmentIDs/*=std::vector<std::string>()*/,
+  vtkIntArray* labelValues/*=nullptr*/
   )
 {
-  return this->Segmentation->GenerateMergedLabelmap(mergedImageData, extentComputationMode, mergedLabelmapGeometry, segmentIDs);
+  return this->Segmentation->GenerateMergedLabelmap(mergedImageData, extentComputationMode, mergedLabelmapGeometry, segmentIDs, labelValues);
 }
 
 //---------------------------------------------------------------------------
 bool vtkMRMLSegmentationNode::GenerateMergedLabelmapForAllSegments(vtkOrientedImageData* mergedImageData, int extentComputationMode,
-  vtkOrientedImageData* mergedLabelmapGeometry /*=nullptr*/, vtkStringArray* segmentIDs /*=nullptr*/)
+  vtkOrientedImageData* mergedLabelmapGeometry /*=nullptr*/, vtkStringArray* segmentIDs /*=nullptr*/, vtkIntArray* labelValues/*nullptr*/)
 {
   std::vector<std::string> segmentIDsVector;
   if (segmentIDs)
@@ -556,7 +560,7 @@ bool vtkMRMLSegmentationNode::GenerateMergedLabelmapForAllSegments(vtkOrientedIm
       segmentIDsVector.push_back(segmentIDs->GetValue(i));
       }
     }
-  return this->GenerateMergedLabelmap(mergedImageData, extentComputationMode, mergedLabelmapGeometry, segmentIDsVector);
+  return this->GenerateMergedLabelmap(mergedImageData, extentComputationMode, mergedLabelmapGeometry, segmentIDsVector, labelValues);
 }
 
 //-----------------------------------------------------------------------------
@@ -881,18 +885,18 @@ void vtkMRMLSegmentationNode::RemoveBinaryLabelmapRepresentation()
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLSegmentationNode::GetBinaryLabelmapRepresentation(const std::string segmentId, vtkOrientedImageData* outputBinaryLabelmap)
+bool vtkMRMLSegmentationNode::GetBinaryLabelmapRepresentation(const std::string segmentId, vtkOrientedImageData* outputBinaryLabelmap)
 {
   if (!this->Segmentation)
     {
     vtkErrorMacro("GetBinaryLabelmapRepresentation: Invalid segmentation");
-    return;
+    return false;
     }
   vtkSegment* segment = this->Segmentation->GetSegment(segmentId);
   if (!segment)
     {
     vtkErrorMacro("GetBinaryLabelmapRepresentation: Invalid segment");
-    return;
+    return false;
     }
 
   vtkOrientedImageData* binaryLabelmap = vtkOrientedImageData::SafeDownCast(
@@ -900,7 +904,7 @@ void vtkMRMLSegmentationNode::GetBinaryLabelmapRepresentation(const std::string 
   if (!binaryLabelmap)
     {
     vtkErrorMacro("GetBinaryLabelmapRepresentation: No binary labelmap representation in segment");
-    return;
+    return false;
     }
 
   vtkNew<vtkImageThreshold> threshold;
@@ -912,6 +916,7 @@ void vtkMRMLSegmentationNode::GetBinaryLabelmapRepresentation(const std::string 
 
   outputBinaryLabelmap->ShallowCopy(threshold->GetOutput());
   outputBinaryLabelmap->CopyDirections(binaryLabelmap);
+  return true;
 }
 
 //---------------------------------------------------------------------------
@@ -954,26 +959,27 @@ void vtkMRMLSegmentationNode::RemoveClosedSurfaceRepresentation()
 }
 
 //---------------------------------------------------------------------------
-void vtkMRMLSegmentationNode::GetClosedSurfaceRepresentation(const std::string segmentId, vtkPolyData* outputClosedSurface)
+bool vtkMRMLSegmentationNode::GetClosedSurfaceRepresentation(const std::string segmentId, vtkPolyData* outputClosedSurface)
 {
   if (!this->Segmentation)
     {
     vtkErrorMacro("GetClosedSurfaceRepresentation: Invalid segmentation");
-    return;
+    return false;
     }
   vtkSegment* segment = this->Segmentation->GetSegment(segmentId);
   if (!segment)
     {
     vtkErrorMacro("GetClosedSurfaceRepresentation: Invalid segment");
-    return;
+    return false;
     }
   vtkDataObject* closedSurface = segment->GetRepresentation(vtkSegmentationConverter::GetSegmentationClosedSurfaceRepresentationName());
   if (!closedSurface)
     {
     vtkErrorMacro("GetClosedSurfaceRepresentation: No closed surface representation in segment");
-    return;
+    return false;
     }
   outputClosedSurface->DeepCopy(closedSurface);
+  return true;
 }
 
 //---------------------------------------------------------------------------
@@ -1167,5 +1173,47 @@ void vtkMRMLSegmentationNode::GetSegmentCenterRAS(const std::string& segmentID, 
     centerRAS[0] = segmentCenterPositionRAS[0];
     centerRAS[1] = segmentCenterPositionRAS[1];
     centerRAS[2] = segmentCenterPositionRAS[2];
+    }
+}
+
+//---------------------------------------------------------------------------
+void vtkMRMLSegmentationNode::SetLabelmapConversionColorTableNodeID(const char* labelmapConversionColorTableNodeID)
+{
+  this->SetNodeReferenceID(this->GetLabelmapConversionColorTableNodeReferenceRole(), labelmapConversionColorTableNodeID);
+}
+
+//---------------------------------------------------------------------------
+vtkMRMLColorTableNode* vtkMRMLSegmentationNode::GetLabelmapConversionColorTableNode()
+{
+  return vtkMRMLColorTableNode::SafeDownCast(this->GetNodeReference(this->GetLabelmapConversionColorTableNodeReferenceRole()));
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLSegmentationNode::OnNodeReferenceAdded(vtkMRMLNodeReference* reference)
+{
+  this->Superclass::OnNodeReferenceAdded(reference);
+  if (std::string(reference->GetReferenceRole()) == this->GetReferenceImageGeometryReferenceRole())
+    {
+    this->InvokeCustomModifiedEvent(vtkMRMLSegmentationNode::ReferenceImageGeometryChangedEvent, reference->GetReferencedNode());
+    }
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLSegmentationNode::OnNodeReferenceModified(vtkMRMLNodeReference* reference)
+{
+  this->Superclass::OnNodeReferenceModified(reference);
+  if (std::string(reference->GetReferenceRole()) == this->GetReferenceImageGeometryReferenceRole())
+    {
+    this->InvokeCustomModifiedEvent(vtkMRMLSegmentationNode::ReferenceImageGeometryChangedEvent, reference->GetReferencedNode());
+    }
+}
+
+//----------------------------------------------------------------------------
+void vtkMRMLSegmentationNode::OnNodeReferenceRemoved(vtkMRMLNodeReference* reference)
+{
+  this->Superclass::OnNodeReferenceRemoved(reference);
+  if (std::string(reference->GetReferenceRole()) == this->GetReferenceImageGeometryReferenceRole())
+    {
+    this->InvokeCustomModifiedEvent(vtkMRMLSegmentationNode::ReferenceImageGeometryChangedEvent, reference->GetReferencedNode());
     }
 }

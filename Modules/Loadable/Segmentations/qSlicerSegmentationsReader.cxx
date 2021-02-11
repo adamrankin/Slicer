@@ -33,13 +33,14 @@
 #include <vtkMRMLSegmentationNode.h>
 #include <vtkMRMLSegmentationDisplayNode.h>
 #include <vtkMRMLStorageNode.h>
+#include <vtkMRMLModelNode.h>
+#include <vtkMRMLModelStorageNode.h>
 
 // VTK includes
 #include <vtkNew.h>
-#include <vtkOBJReader.h>
 #include <vtkPointData.h>
+#include <vtkPolyData.h>
 #include <vtkSmartPointer.h>
-#include <vtkSTLReader.h>
 
 //-----------------------------------------------------------------------------
 class qSlicerSegmentationsReaderPrivate
@@ -89,8 +90,9 @@ qSlicerIO::IOFileType qSlicerSegmentationsReader::fileType()const
 //-----------------------------------------------------------------------------
 QStringList qSlicerSegmentationsReader::extensions()const
 {
-  return QStringList() << "Segmentation (*.seg.nrrd)" << "Segmentation (*.seg.vtm)"
-    << "Segmentation (*.nrrd)" << "Segmentation (*.vtm)"
+  return QStringList()
+    << "Segmentation (*.seg.nrrd)" << "Segmentation (*.seg.nhdr)" << "Segmentation (*.seg.vtm)"
+    << "Segmentation (*.nrrd)" << "Segmentation (*.nhdr)" << "Segmentation (*.vtm)"
     << "Segmentation (*.nii.gz)" << "Segmentation (*.nii)" << "Segmentation (*.hdr)"
     << "Segmentation (*.stl)" << "Segmentation (*.obj)";
 }
@@ -127,31 +129,26 @@ bool qSlicerSegmentationsReader::load(const IOProperties& properties)
   if (extension.compare(".stl") == 0 || extension.compare(".obj") == 0)
     {
     vtkSmartPointer<vtkPolyData> closedSurfaceRepresentation;
-    if (extension.compare(".stl") == 0)
-      {
-      // Create segmentation from STL file
-      vtkNew<vtkSTLReader> reader;
-      reader->SetFileName(fileName.toStdString().c_str());
-      reader->Update();
-      closedSurfaceRepresentation = reader->GetOutput();
-      }
-    else
-      {
-      vtkNew<vtkOBJReader> reader;
-      reader->SetFileName(fileName.toStdString().c_str());
-      reader->Update();
-      closedSurfaceRepresentation = reader->GetOutput();
-      // Remove all arrays, because they could slow down all further processing
+    vtkNew<vtkMRMLModelStorageNode> modelStorageNode;
+    modelStorageNode->SetFileName(fileName.toStdString().c_str());
+    vtkNew<vtkMRMLModelNode> modelNode;
+    if (!modelStorageNode->ReadData(modelNode))
+    {
+      return false;
+    }
+    closedSurfaceRepresentation = modelNode->GetPolyData();
+
+    // Remove all arrays, because they could slow down all further processing
       // and consume significant amount of memory.
-      if (closedSurfaceRepresentation != nullptr && closedSurfaceRepresentation->GetPointData() != nullptr)
-        {
-        vtkPointData* pointData = closedSurfaceRepresentation->GetPointData();
-        while (pointData->GetNumberOfArrays()>0)
-          {
-          pointData->RemoveArray(0);
-          }
-        }
+    if (closedSurfaceRepresentation != nullptr && closedSurfaceRepresentation->GetPointData() != nullptr)
+    {
+      vtkPointData* pointData = closedSurfaceRepresentation->GetPointData();
+      while (pointData->GetNumberOfArrays() > 0)
+      {
+        pointData->RemoveArray(0);
       }
+    }
+    
     if (closedSurfaceRepresentation == nullptr)
       {
       return false;
@@ -190,7 +187,15 @@ bool qSlicerSegmentationsReader::load(const IOProperties& properties)
       autoOpacities = properties["autoOpacities"].toBool();
       }
 
-    vtkMRMLSegmentationNode* node = d->SegmentationsLogic->LoadSegmentationFromFile(fileName.toUtf8().constData(), autoOpacities, name.toUtf8());
+    vtkMRMLColorTableNode* colorTableNode = nullptr;
+    if (properties.contains("colorNodeID"))
+      {
+      std::string nodeID = properties["colorNodeID"].toString().toStdString();
+      colorTableNode = vtkMRMLColorTableNode::SafeDownCast(this->mrmlScene()->GetNodeByID(nodeID));
+      }
+
+    vtkMRMLSegmentationNode* node = d->SegmentationsLogic->LoadSegmentationFromFile(
+      fileName.toUtf8().constData(), autoOpacities, name.toUtf8(), colorTableNode);
     if (!node)
       {
       this->setLoadedNodes(QStringList());

@@ -162,6 +162,9 @@ bool qSlicerSubjectHierarchyPluginHandler::registerPlugin(qSlicerSubjectHierarch
   // Add the plugin to the list
   this->m_RegisteredPlugins << pluginToRegister;
 
+  // Update timestamp
+  this->LastPluginRegistrationTime = QDateTime::currentDateTimeUtc();
+
   return true;
 }
 
@@ -405,6 +408,7 @@ void qSlicerSubjectHierarchyPluginHandler::observeSubjectHierarchyNode(vtkMRMLSu
 
     shNode->AddObserver(vtkMRMLSubjectHierarchyNode::SubjectHierarchyItemAddedEvent, m_CallBack);
     shNode->AddObserver(vtkMRMLSubjectHierarchyNode::SubjectHierarchyItemOwnerPluginSearchRequested, m_CallBack);
+    shNode->AddObserver(vtkMRMLSubjectHierarchyNode::SubjectHierarchyItemsShowInViewRequestedEvent, m_CallBack);
   }
 }
 
@@ -462,7 +466,7 @@ void qSlicerSubjectHierarchyPluginHandler::setPluginLogic(qSlicerSubjectHierarch
   // Register view menu actions of those plugins that were registered before the PluginLogic was set.
   if (this->m_PluginLogic)
     {
-    foreach(qSlicerSubjectHierarchyAbstractPlugin * pluginToRegister, this->m_RegisteredPlugins)
+    foreach(qSlicerSubjectHierarchyAbstractPlugin* pluginToRegister, this->m_RegisteredPlugins)
       {
       foreach(QAction * action, pluginToRegister->viewContextMenuActions())
         {
@@ -657,6 +661,65 @@ void qSlicerSubjectHierarchyPluginHandler::onSubjectHierarchyNodeEvent(
         {
         qCritical() << Q_FUNC_INFO << ": No subject hierarchy node could be retrieved from the scene";
         }
+      }
+    }
+  // Handle scene events
+  else if (event == vtkMRMLSubjectHierarchyNode::SubjectHierarchyItemsShowInViewRequestedEvent)
+  {
+    if (!callData)
+      {
+      qCritical() << Q_FUNC_INFO << ": SubjectHierarchyItemsShowInViewEvent processing failed, invalid event data";
+      return;
+      }
+    vtkMRMLSubjectHierarchyNode::SubjectHierarchyItemsShowInViewRequestedEventData* showNodesEventData
+      = reinterpret_cast<vtkMRMLSubjectHierarchyNode::SubjectHierarchyItemsShowInViewRequestedEventData*>(callData);
+    pluginHandler->showItemsInView(showNodesEventData->itemIDsToShow, showNodesEventData->viewNode);
+  }
+}
+
+//-----------------------------------------------------------------------------
+void qSlicerSubjectHierarchyPluginHandler::showItemsInView(vtkIdList* itemIDsToShow, vtkMRMLAbstractViewNode* viewNode)
+{
+  if (!itemIDsToShow)
+    {
+    return;
+    }
+  if (!this->m_MRMLScene || !this->m_MRMLScene->GetSubjectHierarchyNode())
+    {
+    qCritical() << Q_FUNC_INFO << ": Invalid subject hierarchy node";
+    return;
+    }
+
+  // Collect all items that will be shown
+  vtkMRMLSubjectHierarchyNode* shNode = m_MRMLScene->GetSubjectHierarchyNode();
+  QSet<vtkIdType> allItemIDsSet;
+  for (int index = 0; index < itemIDsToShow->GetNumberOfIds(); ++index)
+    {
+    vtkIdType currentItemID = itemIDsToShow->GetId(index);
+    // Add item itself
+    allItemIDsSet << currentItemID;
+    // Add child items recursively
+    std::vector<vtkIdType> childItemIDs;
+    shNode->GetItemChildren(currentItemID, childItemIDs, true);
+    for (auto childItem : childItemIDs)
+      {
+      allItemIDsSet << childItem;
+      }
+    }
+  vtkNew<vtkIdList> allItemIDsToShow;
+  foreach (vtkIdType itemID, allItemIDsSet)
+    {
+    allItemIDsToShow->InsertNextId(itemID);
+    }
+
+  // Show each dropped item and their children
+  for (int index = 0; index < allItemIDsToShow->GetNumberOfIds(); ++index)
+    {
+    vtkIdType itemID = allItemIDsToShow->GetId(index);
+    qSlicerSubjectHierarchyAbstractPlugin* ownerPlugin = this->getOwnerPluginForSubjectHierarchyItem(itemID);
+    if (ownerPlugin)
+      {
+      ownerPlugin->showItemInView(itemID, viewNode, allItemIDsToShow);
       }
     }
 }

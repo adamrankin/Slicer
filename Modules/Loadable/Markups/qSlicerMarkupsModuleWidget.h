@@ -51,10 +51,6 @@ public:
   /// Disconnect from scene when exiting
   void exit() override;
 
-  /// Manage short cuts that allow key bindings for certain functions
-  void installShortcuts();
-  void removeShortcuts();
-
   /// Get the logic in the proper class
   vtkSlicerMarkupsLogic *markupsLogic();
 
@@ -163,6 +159,7 @@ public slots:
   void onCreateMarkupsOpenCurve();
   void onCreateMarkupsClosedCurve();
   void onCreateMarkupsPlane();
+  void onCreateMarkupsROI();
 
   /// Toggle the markups node visibility flag
   void onListVisibileInvisiblePushButtonClicked();
@@ -237,6 +234,22 @@ public slots:
   /// Change in a widget related to a surface curve type parameter
   void onCurveTypeParameterChanged();
 
+  /// Change in ROI parameter widget
+  void onROITypeParameterChanged();
+
+  /// Make sure all measurements in the current markups node are observed
+  void observeMeasurementsInCurrentMarkupsNode();
+  /// Update measurements description label
+  void updateMeasurementsDescriptionLabel();
+  /// Populate measurement settings frame from the available measurements in the current markup
+  void populateMeasurementSettingsTable();
+  /// Update observations on measurements when their container is modified (i.e. measurement added or removed)
+  void onMeasurementsCollectionModified();
+  /// Update measurement information on GUI when a measurement is modified
+  void onMeasurementModified(vtkObject* caller);
+  /// Enable/disable measurement when an enable checkbox has been toggled
+  void onMeasurementEnabledCheckboxToggled(bool on);
+
 protected:
   QScopedPointer<qSlicerMarkupsModuleWidgetPrivate> d_ptr;
 
@@ -250,8 +263,6 @@ protected:
 private:
   Q_DECLARE_PRIVATE(qSlicerMarkupsModuleWidget);
   Q_DISABLE_COPY(qSlicerMarkupsModuleWidget);
-
-  QShortcut *pToAddShortcut;
 };
 
 #endif

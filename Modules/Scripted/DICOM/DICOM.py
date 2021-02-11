@@ -42,6 +42,9 @@ This work is supported by NA-MIC, NAC, BIRN, NCIGT, and the Slicer Community.
     self.browserWidget = None  # SlicerDICOMBrowser instance (ctkDICOMBrowser with additional section for loading the selected items)
     self.browserSettingsWidget = None
     self.currentViewArrangement = 0
+    # This variable is set to true if we temporarily
+    # hide the data probe (and so we need to restore its visibility).
+    self.dataProbeHasBeenTemporarilyHidden = False
 
   def setup(self):
     # Tasks to execute after the application has started up
@@ -80,9 +83,6 @@ This work is supported by NA-MIC, NAC, BIRN, NCIGT, and the Slicer Community.
       # add the settings options
       self.settingsPanel = DICOMSettingsPanel()
       slicer.app.settingsDialog().addPanel("DICOM", self.settingsPanel)
-
-      dataProbe = slicer.util.mainWindow().findChild("QWidget", "DataProbeCollapsibleWidget")
-      self.wasDataProbeVisible = dataProbe.isVisible()
 
       layoutManager = slicer.app.layoutManager()
       layoutManager.layoutChanged.connect(self.onLayoutChanged)
@@ -262,7 +262,9 @@ This work is supported by NA-MIC, NAC, BIRN, NCIGT, and the Slicer Community.
     if viewArrangement == self.currentViewArrangement:
       return
 
-    self.previousViewArrangement = self.currentViewArrangement
+    if (self.currentViewArrangement != slicer.vtkMRMLLayoutNode.SlicerLayoutNone and
+      self.currentViewArrangement != slicer.vtkMRMLLayoutNode.SlicerLayoutDicomBrowserView):
+      self.previousViewArrangement = self.currentViewArrangement
     self.currentViewArrangement = viewArrangement
 
     if self.browserWidget is None:
@@ -270,18 +272,38 @@ This work is supported by NA-MIC, NAC, BIRN, NCIGT, and the Slicer Community.
     dataProbe = slicer.util.mainWindow().findChild("QWidget", "DataProbeCollapsibleWidget")
     if self.currentViewArrangement == slicer.vtkMRMLLayoutNode.SlicerLayoutDicomBrowserView:
       # View has been changed to the DICOM browser view
-      self.wasDataProbeVisible = dataProbe.isVisible()
       self.browserWidget.show()
-      dataProbe.setVisible(False)
-    elif self.previousViewArrangement == slicer.vtkMRMLLayoutNode.SlicerLayoutDicomBrowserView:
+      # If we are in DICOM module, hide the Data Probe to have more space for the module
+      try:
+        inDicomModule = slicer.modules.dicom.widgetRepresentation().isEntered
+      except AttributeError:
+        # Slicer is shutting down
+        inDicomModule = False
+      if inDicomModule and dataProbe and dataProbe.isVisible():
+        dataProbe.setVisible(False)
+        self.dataProbeHasBeenTemporarilyHidden = True
+    else:
       # View has been changed from the DICOM browser view
-      dataProbe.setVisible(self.wasDataProbeVisible)
+      if self.dataProbeHasBeenTemporarilyHidden:
+        # DataProbe was temporarily hidden, restore its visibility now
+        dataProbe.setVisible(True)
+        self.dataProbeHasBeenTemporarilyHidden = False
 
 
   def onBrowserWidgetClosed(self):
-    if (self.currentViewArrangement == slicer.vtkMRMLLayoutNode.SlicerLayoutDicomBrowserView and
-        self.previousViewArrangement != slicer.vtkMRMLLayoutNode.SlicerLayoutDicomBrowserView):
-      slicer.app.layoutManager().setLayout(self.previousViewArrangement)
+    if (self.currentViewArrangement != slicer.vtkMRMLLayoutNode.SlicerLayoutDicomBrowserView and
+      self.currentViewArrangement != slicer.vtkMRMLLayoutNode.SlicerLayoutNone):
+      # current layout is a valid layout that is not the DICOM browser view, so nothing to do
+      return
+
+    layoutId = self.previousViewArrangement
+
+    # Use a default layout if this layout is not valid
+    if (layoutId == slicer.vtkMRMLLayoutNode.SlicerLayoutNone
+      or layoutId == slicer.vtkMRMLLayoutNode.SlicerLayoutDicomBrowserView):
+      layoutId = qt.QSettings().value("MainWindow/layout", slicer.vtkMRMLLayoutNode.SlicerLayoutInitialView)
+
+    slicer.app.layoutManager().setLayout(layoutId)
 
 
   def _onModuleAboutToBeUnloaded(self, moduleName):
@@ -321,6 +343,15 @@ class _ui_DICOMSettingsPanel(object):
     parent.registerProperty(
       "DICOM/automaticallyLoadReferences", loadReferencesComboBox,
       "currentUserDataAsString", str(qt.SIGNAL("currentIndexChanged(int)")))
+
+    detailedLoggingCheckBox = qt.QCheckBox()
+    detailedLoggingCheckBox.toolTip = ("Log more details during DICOM operations."
+      " Useful for investigating DICOM loading issues but may impact performance.")
+    genericGroupBoxFormLayout.addRow("Detailed logging:", detailedLoggingCheckBox)
+    detailedLoggingMapper = ctk.ctkBooleanMapper(detailedLoggingCheckBox, "checked", str(qt.SIGNAL("toggled(bool)")))
+    parent.registerProperty(
+      "DICOM/detailedLogging", detailedLoggingMapper,
+      "valueAsInt", str(qt.SIGNAL("valueAsIntChanged(int)")))
 
     vBoxLayout.addWidget(genericGroupBox)
 
@@ -784,7 +815,7 @@ class DICOMWidget(ScriptedLoadableModuleWidget):
         # TODO: deal with Debug/RelWithDebInfo on windows
 
         # set up temp dir
-        tmpDir = slicer.app.userSettings().value('Modules/TemporaryDirectory')
+        tmpDir = slicer.app.temporaryPath
         if not os.path.exists(tmpDir):
           os.mkdir(tmpDir)
         self.tmpDir = tmpDir + '/DICOM'

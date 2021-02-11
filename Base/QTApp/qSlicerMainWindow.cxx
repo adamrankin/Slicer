@@ -142,13 +142,6 @@ void qSlicerMainWindowPrivate::setupUi(QMainWindow * mainWindow)
   qSlicerApplication * app = qSlicerApplication::application();
 
   //----------------------------------------------------------------------------
-  // Load data shortcuts for backward compatibility
-  //----------------------------------------------------------------------------
-  QList<QKeySequence> addShortcuts = this->FileAddDataAction->shortcuts();
-  addShortcuts << QKeySequence(Qt::CTRL + Qt::Key_A);
-  this->FileAddDataAction->setShortcuts(addShortcuts);
-
-  //----------------------------------------------------------------------------
   // Recently loaded files
   //----------------------------------------------------------------------------
   QObject::connect(app->coreIOManager(), SIGNAL(newFileLoaded(qSlicerIO::IOProperties)),
@@ -288,18 +281,6 @@ void qSlicerMainWindowPrivate::setupUi(QMainWindow * mainWindow)
   QHBoxLayout* centralLayout = new QHBoxLayout(this->CentralWidget);
   centralLayout->setContentsMargins(0, 0, 0, 0);
   centralLayout->addWidget(layoutFrame);
-
-  QColor windowColor = this->CentralWidget->palette().color(QPalette::Window);
-  QPalette centralPalette = this->CentralWidget->palette();
-  centralPalette.setColor(QPalette::Window, QColor(95, 95, 113));
-  this->CentralWidget->setAutoFillBackground(true);
-  this->CentralWidget->setPalette(centralPalette);
-
-  // Restore the palette for the children
-  centralPalette.setColor(QPalette::Window, windowColor);
-  layoutFrame->setPalette(centralPalette);
-  layoutFrame->setAttribute(Qt::WA_NoSystemBackground, true);
-  layoutFrame->setAttribute(Qt::WA_TranslucentBackground, true);
 
   //----------------------------------------------------------------------------
   // Layout Manager
@@ -494,6 +475,8 @@ void qSlicerMainWindowPrivate::setupUi(QMainWindow * mainWindow)
       this->PythonConsoleToggleViewAction = new QAction("", this->ViewMenu);
       this->PythonConsoleToggleViewAction->setCheckable(true);
       }
+    q->pythonConsole()->setScrollBarPolicy(Qt::ScrollBarAsNeeded);
+    this->updatePythonConsolePalette();
     QObject::connect(q->pythonConsole(), SIGNAL(aboutToExecute(const QString&)),
       q, SLOT(onPythonConsoleUserInput(const QString&)));
     // Set up show/hide action
@@ -511,6 +494,51 @@ void qSlicerMainWindowPrivate::setupUi(QMainWindow * mainWindow)
     {
     qWarning("qSlicerMainWindowPrivate::setupUi: Failed to create Python console");
     }
+#endif
+}
+
+//-----------------------------------------------------------------------------
+void qSlicerMainWindowPrivate::updatePythonConsolePalette()
+{
+  Q_Q(qSlicerMainWindow);
+#ifdef Slicer_USE_PYTHONQT
+  ctkPythonConsole* pythonConsole = q->pythonConsole();
+  if (!pythonConsole)
+    {
+    return;
+    }
+  QPalette palette = qSlicerApplication::application()->palette();
+
+  // pythonConsole->setBackgroundColor is not called, because by default
+  // the background color of the current palette is used, which is good.
+
+  // Color of the >> prompt. Blue in both bright and dark styles (brighter in dark style).
+  pythonConsole->setPromptColor(palette.color(QPalette::Highlight));
+
+  // Color of text that user types in the console. Blue in both bright and dark styles (brighter in dark style).
+  pythonConsole->setCommandTextColor(palette.color(QPalette::Link));
+
+  // Color of output of commands. Black in bright style, white in dark style.
+  pythonConsole->setOutputTextColor(palette.color(QPalette::WindowText));
+
+  // Color of error messages. Red in both bright and dark styles, but slightly brighter in dark style.
+  QColor textColor = q->palette().color(QPalette::Normal, QPalette::Text);
+  if (textColor.lightnessF() < 0.5)
+    {
+    // Light theme
+    pythonConsole->setErrorTextColor(QColor::fromRgb(240, 0, 0)); // darker than Qt::red
+    }
+  else
+    {
+    // Dark theme
+    pythonConsole->setErrorTextColor(QColor::fromRgb(255, 68, 68)); // lighter than Qt::red
+    }
+
+  // Color of welcome message (printed when the terminal is reset)
+  // and "user input" (this does not seem to be used in Slicer).
+  // Gray in both bright and dark styles.
+  pythonConsole->setStdinTextColor(palette.color(QPalette::Disabled, QPalette::WindowText));   // gray
+  pythonConsole->setWelcomeTextColor(palette.color(QPalette::Disabled, QPalette::WindowText)); // gray
 #endif
 }
 
@@ -611,7 +639,9 @@ QList<qSlicerIO::IOProperties> qSlicerMainWindowPrivate::readRecentlyLoadedFiles
     {
     settings.setArrayIndex(i);
     QVariant file = settings.value("file");
-    fileProperties << file.toMap();
+    qSlicerIO::IOProperties properties = file.toMap();
+    properties["fileName"] = qSlicerApplication::application()->toSlicerHomeAbsolutePath(properties["fileName"].toString());
+    fileProperties << properties;
     }
   settings.endArray();
 
@@ -626,7 +656,9 @@ void qSlicerMainWindowPrivate::writeRecentlyLoadedFiles(const QList<qSlicerIO::I
   for (int i = 0; i < fileProperties.size(); ++i)
     {
     settings.setArrayIndex(i);
-    settings.setValue("file", fileProperties.at(i));
+    qSlicerIO::IOProperties properties = fileProperties.at(i);
+    properties["fileName"] = qSlicerApplication::application()->toSlicerHomeRelativePath(properties["fileName"].toString());
+    settings.setValue("file", properties);
     }
   settings.endArray();
 }
@@ -936,6 +968,7 @@ void qSlicerMainWindow::on_FileCloseSceneAction_triggered()
   Q_D(qSlicerMainWindow);
   if (d->confirmCloseScene())
     {
+    qDebug("Close main MRML scene");
     qSlicerCoreApplication::application()->mrmlScene()->Clear(false);
     // Make sure we don't remember the last scene's filename to prevent
     // accidentally overwriting the scene.
@@ -1310,7 +1343,7 @@ void qSlicerMainWindow::on_EditApplicationSettingsAction_triggered()
 
   // Reload settings to apply any changes that have been made outside of the
   // dialog (e.g. changes to module paths due to installing extensions). See
-  // http://na-mic.org/Mantis/view.php?id=3658.
+  // https://github.com/Slicer/Slicer/issues/3658.
   settingsDialog->reloadSettings();
 
   // Now show the dialog
@@ -1668,4 +1701,20 @@ bool qSlicerMainWindow::eventFilter(QObject* object, QEvent* event)
     }
 #endif
   return this->Superclass::eventFilter(object, event);
+}
+
+//---------------------------------------------------------------------------
+void qSlicerMainWindow::changeEvent(QEvent* event)
+{
+  Q_D(qSlicerMainWindow);
+  switch (event->type())
+    {
+    case QEvent::PaletteChange:
+      {
+      d->updatePythonConsolePalette();
+      break;
+      }
+    default:
+      break;
+    }
 }

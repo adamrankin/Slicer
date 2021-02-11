@@ -577,6 +577,9 @@ class SegmentEditorThresholdEffect(AbstractScriptedSegmentEditorEffect):
       logging.error("Unknown AutoThresholdMode {0}".format(autoThresholdMode))
 
   def onApply(self):
+    if not self.scriptedEffect.confirmCurrentSegmentVisible():
+      return
+
     try:
       # Get master volume image data
       import vtkSegmentationCorePython as vtkSegmentationCore
@@ -813,7 +816,11 @@ class SegmentEditorThresholdEffect(AbstractScriptedSegmentEditorEffect):
     maxNumberOfBins = 1000
     masterImageData = self.scriptedEffect.masterVolumeImageData()
     scalarRange = masterImageData.GetScalarRange()
-    numberOfBins = int(scalarRange[1] - scalarRange[0]) + 1
+    scalarType = masterImageData.GetScalarType()
+    if scalarType == vtk.VTK_FLOAT or scalarType == vtk.VTK_DOUBLE:
+      numberOfBins = maxNumberOfBins
+    else:
+      numberOfBins = int(scalarRange[1] - scalarRange[0]) + 1
     if numberOfBins > maxNumberOfBins:
       numberOfBins = maxNumberOfBins
     binSpacing = (scalarRange[1] - scalarRange[0] + 1) / numberOfBins

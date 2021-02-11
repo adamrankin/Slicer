@@ -53,6 +53,7 @@ class qSlicerExtensionsManagerModel;
 #endif
 class vtkDataIOManagerLogic;
 class vtkSlicerApplicationLogic;
+class vtkMRMLAbstractLogic;
 class vtkMRMLApplicationLogic;
 class vtkMRMLRemoteIOLogic;
 class vtkMRMLScene;
@@ -104,7 +105,9 @@ public:
   qSlicerCoreApplication(int &argc, char **argv);
   ~qSlicerCoreApplication() override;
 
-  /// Return a reference to the application singleton
+  /// Return a reference to the application singleton.
+  /// It returns nullptr if the current application is not based on qSlicerCoreApplication class
+  /// (for example, in Qt Designer executable loads widget plugins).
   static qSlicerCoreApplication* application();
 
   /// Used in addition to existing QCoreApplication attribute.
@@ -155,18 +158,18 @@ public:
   ///
   /// \note Using this function will ensure that the environment is up-to-date for
   /// processes started using QProcess or other alternative methods.
-  void setEnvironmentVariable(const QString& key, const QString& value);
+  Q_INVOKABLE void setEnvironmentVariable(const QString& key, const QString& value);
 
   /// Returns True if environment variable identified by \a key is set to \a value
-  bool isEnvironmentVariableValueSet(const QString& key, const QString& value);
+  Q_INVOKABLE bool isEnvironmentVariableValueSet(const QString& key, const QString& value);
 
   /// Convenient function allowing to prepend \a value to environment variable identified by
   /// by \a key using \a separator
-  void prependEnvironmentVariable(const QString& key, const QString& value, QChar separator = ';');
+  Q_INVOKABLE void prependEnvironmentVariable(const QString& key, const QString& value, QChar separator = ';');
 
   /// Convenient function allowing to append \a value to environment variable identified by
   /// by \a key using \a separator
-  void appendEnvironmentVariable(const QString& key, const QString& value, QChar separator = ';');
+  Q_INVOKABLE void appendEnvironmentVariable(const QString& key, const QString& value, QChar separator = ';');
 
   /// Parse arguments
   /// \note If exitWhenDone is True, it's your responsibility to exit the application
@@ -211,6 +214,9 @@ public:
 
   /// Get application logic
   Q_INVOKABLE vtkSlicerApplicationLogic* applicationLogic() const;
+
+  // Convenience method for getting a module logic from the application logic.
+  Q_INVOKABLE vtkMRMLAbstractLogic* moduleLogic(const QString& moduleName)const;
 
   /// Get slicer home directory
   /// \sa slicerHome
@@ -325,10 +331,10 @@ public:
 #endif
 
 #ifdef Slicer_BUILD_EXTENSIONMANAGER_SUPPORT
-  /// Get extension manager model
+  /// Get extensions manager model
   Q_INVOKABLE qSlicerExtensionsManagerModel* extensionsManagerModel()const;
 
-  /// Set the extension manager model
+  /// Set the extensions manager model
   /// \note qSlicerCoreApplication takes ownership of the object
   void setExtensionsManagerModel(qSlicerExtensionsManagerModel* model);
 #endif
@@ -470,6 +476,22 @@ public:
   /// Print message on console.
   /// If error is true then the message is printed on stderr, otherwise on stdout.
   Q_INVOKABLE void showConsoleMessage(QString message, bool error=true) const;
+
+  /// Converts relative path to absolute path using slicerHome directory.
+  /// Returns absolute path unchanged.
+  Q_INVOKABLE QString toSlicerHomeAbsolutePath(const QString& path) const;
+
+  /// Converts paths within slicerHome directory to relative paths.
+  /// Leaves other paths unchanged.
+  Q_INVOKABLE QString toSlicerHomeRelativePath(const QString& path) const;
+
+  /// Converts relative path to absolute path using slicerHome directory.
+  /// Returns absolute path unchanged.
+  Q_INVOKABLE QStringList toSlicerHomeAbsolutePaths(const QStringList& path) const;
+
+  /// Converts paths within slicerHome directory to relative paths.
+  /// Leaves other paths unchanged.
+  Q_INVOKABLE QStringList toSlicerHomeRelativePaths(const QStringList& path) const;
 
 public slots:
 
