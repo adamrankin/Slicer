@@ -30,9 +30,9 @@ if(Slicer_USE_CTKAPPLAUNCHER)
       set(CTKAPPLAUNCHER_ARCHITECTURE "i386")
       set(md5 "f8f576017cbc5b8fb79b3b846d102595")
     elseif("${CTKAPPLAUNCHER_OS}" STREQUAL "linux")
-      if("${CMAKE_HOST_SYSTEM_PROCESSOR}" STREQUAL "aarch64")
+      if("${CMAKE_SYSTEM_PROCESSOR}" STREQUAL "aarch64")
         set(_base_url https://github.com/Slicer/AppLauncher/releases/download/v)
-        set(md5 "54afe832001fb0c0146c089eeccd2d8f")
+        set(md5 "c4eba7ce441ec90b273e1080db8a13dc")
       else()
         set(md5 "9c0605dfa893a4bce63ea7cf776b844e")
       endif()
@@ -42,7 +42,7 @@ if(Slicer_USE_CTKAPPLAUNCHER)
 
     set(EP_BINARY_DIR ${CMAKE_BINARY_DIR}/${proj})
 
-    set(CTKAppLauncherFileName ${_base_url}${launcher_version}/CTKAppLauncher-${launcher_version}-${CTKAPPLAUNCHER_OS}-${CMAKE_HOST_SYSTEM_PROCESSOR}.tar.gz)
+    set(CTKAppLauncherFileName ${_base_url}${launcher_version}/CTKAppLauncher-${launcher_version}-${CTKAPPLAUNCHER_OS}-${CMAKE_SYSTEM_PROCESSOR}.tar.gz)
     ExternalProject_Add(${proj}
       ${${proj}_EP_ARGS}
       URL ${CTKAppLauncherFileName}
