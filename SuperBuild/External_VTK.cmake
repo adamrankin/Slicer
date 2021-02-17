@@ -166,13 +166,12 @@ if((NOT DEFINED VTK_DIR OR NOT DEFINED VTK_SOURCE_DIR) AND NOT Slicer_USE_SYSTEM
     # - VTK_WRAP_TCL
     )
 
-  ExternalProject_SetIfNotDefined(
-    Slicer_${proj}_GIT_REPOSITORY
-    "${EP_GIT_PROTOCOL}://github.com/slicer/VTK.git"
-    QUIET
-    )
-
   if(Slicer_USE_OpenGLES)
+    ExternalProject_SetIfNotDefined(
+      Slicer_${proj}_GIT_REPOSITORY
+      "${EP_GIT_PROTOCOL}://github.com/adamrankin/VTK.git"
+      QUIET
+      )
     list(APPEND EXTERNAL_PROJECT_OPTIONAL_CMAKE_CACHE_ARGS
       -DVTK_OPENGL_USE_GLES:BOOL=ON
       )
@@ -181,6 +180,12 @@ if((NOT DEFINED VTK_DIR OR NOT DEFINED VTK_SOURCE_DIR) AND NOT Slicer_USE_SYSTEM
         -DVTK_OPENGL_HAS_EGL:BOOL=ON
         )
     endif()
+  else()
+    ExternalProject_SetIfNotDefined(
+      Slicer_${proj}_GIT_REPOSITORY
+      "${EP_GIT_PROTOCOL}://github.com/slicer/VTK.git"
+      QUIET
+      )
   endif()
 
   set(_git_tag)
@@ -189,7 +194,6 @@ if((NOT DEFINED VTK_DIR OR NOT DEFINED VTK_SOURCE_DIR) AND NOT Slicer_USE_SYSTEM
     set(vtk_egg_info_version "8.2.0")
   elseif("${Slicer_VTK_VERSION_MAJOR}" STREQUAL "9")
     if(Slicer_USE_OpenGLES)
-      set(Slicer_${proj}_GIT_REPOSITORY ${EP_GIT_PROTOCOL}://github.com/adamrankin/VTK.git FORCE)
       set(_git_tag "arm64")
     else()
       set(_git_tag "d76bf153dd694d9fc5d84fcee10702091f60ace0") # slicer-v9.0.20201111-733234c785
